@@ -160,7 +160,7 @@ struct BookDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 hero
-                wantToReadOffer
+                quickStatusOffer
                 openingBlock
                 listsSection
                 aboutSection
@@ -200,10 +200,11 @@ struct BookDetailView: View {
         }
     }
 
-    // MARK: - Quick save
+    // MARK: - Quick action
 
-    /// **The one way to say "Want to Read" without scrolling past the score
-    /// and the people you follow to reach it.**
+    /// **The one way to say "Want to Read" — or, once it is one, "I started
+    /// this" — without scrolling past the score and the people you follow to
+    /// reach it.**
     ///
     /// Before this, an unsaved book's only save control sat inside
     /// `actionsRow`, at the foot of `personalStateBlock` — after
@@ -216,27 +217,62 @@ struct BookDetailView: View {
     /// most likely to want is visible before any scrolling — without moving
     /// `recommendationContext` or `communitySection`, which still lead
     /// underneath it exactly as before. It calls the same `choose(_:)` every
-    /// other save on this page uses, so a recommended book quick-saved here
-    /// keeps its provenance exactly as it would from the button that used to
-    /// live below.
+    /// other status change on this page uses, so a recommended book
+    /// quick-saved here keeps its provenance exactly as it would from the
+    /// button that used to live below.
     ///
-    /// **Gone the moment the book has a status.** `actionsRow` no longer
-    /// repeats this once saved — one save control per state, not two.
+    /// **A Want to Read book earns the same one tap, for the next step.**
+    /// Its only other route into Reading was `statusControl`, below the score
+    /// and community sections, and tapping it opens the full log editor — a
+    /// form built for recording a finished, rated, reviewed reading, which
+    /// defaults to *Finished* for a book with no diary entry yet. Turning an
+    /// intention into an active reading is the whole point of saving the book
+    /// in the first place, and it deserves the same directness, not a form
+    /// built for the opposite end of the reading. `statusControl` still opens
+    /// the full editor for a reader who wants to say more.
+    ///
+    /// **Gone once the book is actually Reading, or further along.** Neither
+    /// offer repeats a status the book already has — one quick action per
+    /// state, and only for the next state, not the current one.
     @ViewBuilder
-    private var wantToReadOffer: some View {
-        if myStatus == nil {
-            Button {
+    private var quickStatusOffer: some View {
+        switch myStatus {
+        case nil:
+            quickStatusButton(
+                title: ReadingStatus.wantToRead.title,
+                symbol: ReadingStatus.wantToRead.symbol,
+                hint: "Adds \(book.title) to your reading list"
+            ) {
                 choose(.wantToRead)
-            } label: {
-                Label(ReadingStatus.wantToRead.title, systemImage: ReadingStatus.wantToRead.symbol)
-                    .font(Theme.TypeScale.ui())
-                    .foregroundStyle(Theme.Palette.accent)
             }
-            .buttonStyle(.plain)
-            .pageMargin()
-            .padding(.top, Theme.Space.snug)
-            .accessibilityHint("Adds \(book.title) to your reading list")
+        case .wantToRead:
+            quickStatusButton(
+                title: "Start reading",
+                symbol: ReadingStatus.reading.symbol,
+                hint: "Marks \(book.title) as Reading"
+            ) {
+                choose(.reading)
+            }
+        default:
+            EmptyView()
         }
+    }
+
+    private func quickStatusButton(
+        title: String,
+        symbol: String,
+        hint: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(Theme.TypeScale.ui())
+                .foregroundStyle(Theme.Palette.accent)
+        }
+        .buttonStyle(.plain)
+        .pageMargin()
+        .padding(.top, Theme.Space.snug)
+        .accessibilityHint(hint)
     }
 
     // MARK: - Opening hierarchy
@@ -816,7 +852,7 @@ struct BookDetailView: View {
     /// last year should not have to shelve it first.
     ///
     /// This used to also carry the primary "Want to Read" button for an
-    /// untouched book. That moved to `wantToReadOffer`, under the hero, so a
+    /// untouched book. That moved to `quickStatusOffer`, under the hero, so a
     /// reader does not have to scroll past the score and the community to
     /// reach it; carrying it here too once the book is saved would have been
     /// the exact "two controls for one fact" this page's own history warns
