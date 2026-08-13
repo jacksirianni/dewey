@@ -160,6 +160,7 @@ struct BookDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 hero
+                wantToReadOffer
                 openingBlock
                 listsSection
                 aboutSection
@@ -196,6 +197,45 @@ struct BookDetailView: View {
         // related book re-evaluates.
         .task(id: initialBook.id) {
             await store.enrichIfNeeded(initialBook.id)
+        }
+    }
+
+    // MARK: - Quick save
+
+    /// **The one way to say "Want to Read" without scrolling past the score
+    /// and the people you follow to reach it.**
+    ///
+    /// Before this, an unsaved book's only save control sat inside
+    /// `actionsRow`, at the foot of `personalStateBlock` — after
+    /// `recommendationContext`, `deweyScoreSection` and `communitySection`,
+    /// all of which can run long. A reader who opened the page specifically
+    /// meaning to save the book had to scroll past all three to do the one
+    /// thing they came to do, while a Search row let them do it in one tap.
+    ///
+    /// This sits directly under the hero instead, so the action a reader is
+    /// most likely to want is visible before any scrolling — without moving
+    /// `recommendationContext` or `communitySection`, which still lead
+    /// underneath it exactly as before. It calls the same `choose(_:)` every
+    /// other save on this page uses, so a recommended book quick-saved here
+    /// keeps its provenance exactly as it would from the button that used to
+    /// live below.
+    ///
+    /// **Gone the moment the book has a status.** `actionsRow` no longer
+    /// repeats this once saved — one save control per state, not two.
+    @ViewBuilder
+    private var wantToReadOffer: some View {
+        if myStatus == nil {
+            Button {
+                choose(.wantToRead)
+            } label: {
+                Label(ReadingStatus.wantToRead.title, systemImage: ReadingStatus.wantToRead.symbol)
+                    .font(Theme.TypeScale.ui())
+                    .foregroundStyle(Theme.Palette.accent)
+            }
+            .buttonStyle(.plain)
+            .pageMargin()
+            .padding(.top, Theme.Space.snug)
+            .accessibilityHint("Adds \(book.title) to your reading list")
         }
     }
 
@@ -772,31 +812,17 @@ struct BookDetailView: View {
         .accessibilityHint("Places this book by comparing it with books you have already placed")
     }
 
-    /// The reader's own actions. Before the book is in the library the honest
-    /// primary is to add it — labelled for the status it creates, not for the
-    /// filing act of adding. Once it is in the library, Log moves in beside
-    /// Add to list and Recommend: it is no longer the one thing to do with an
-    /// untouched book, it is one of three things to do with a saved one.
-    ///
-    /// Logging stays reachable in both states — a reader who finished a book
+    /// Logging, reachable regardless of status — a reader who finished a book
     /// last year should not have to shelve it first.
-    @ViewBuilder
+    ///
+    /// This used to also carry the primary "Want to Read" button for an
+    /// untouched book. That moved to `wantToReadOffer`, under the hero, so a
+    /// reader does not have to scroll past the score and the community to
+    /// reach it; carrying it here too once the book is saved would have been
+    /// the exact "two controls for one fact" this page's own history warns
+    /// against.
     private var actionsRow: some View {
-        if myStatus == nil {
-            VStack(alignment: .leading, spacing: Theme.Space.snug) {
-                Button {
-                    choose(.wantToRead)
-                } label: {
-                    Label("Want to Read", systemImage: "plus")
-                }
-                .buttonStyle(PrimaryButtonStyle())
-
-                logButton.buttonStyle(QuietButtonStyle())
-            }
-            .pageMargin()
-        } else {
-            logButton.buttonStyle(QuietButtonStyle()).pageMargin()
-        }
+        logButton.buttonStyle(QuietButtonStyle()).pageMargin()
     }
 
     private var logButton: some View {
