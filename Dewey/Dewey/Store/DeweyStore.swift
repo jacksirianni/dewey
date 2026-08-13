@@ -1044,6 +1044,46 @@ final class DeweyStore {
 
     // MARK: - Mutating the library
 
+    /// Provenance is inferred at the moment of saving, never asked for. If
+    /// the book reached you through a person, Dewey already knows — a form
+    /// would defeat the entire idea.
+    ///
+    /// One source for this inference, called from wherever a reader can save
+    /// a book without opening the book page first (a quick save from a
+    /// search row, for instance) as well as from the book page itself — so a
+    /// book saved from either place tells the same true story about how it
+    /// arrived.
+    ///
+    /// **Nothing below the recommendation check guesses.** Two further
+    /// inferences used to run here, and both stated a guess as a fact in the
+    /// one place the product promises never to. If the book appeared on any
+    /// public list, saving it attributed the save to that list's owner *and
+    /// quoted their premise as the reason* — so a reader who searched for
+    /// Middlemarch, read nothing but the title, and tapped Want to Read got a
+    /// permanent provenance chain reading "Ana Beltrán → You" with Ana's
+    /// sentence in quotation marks under it. A fallback below that attributed
+    /// it to whichever follower happened to have rated it first.
+    ///
+    /// The premise of the feature is that Dewey already knows how a book
+    /// reached its reader. It knows when somebody sent it — that is a real
+    /// record, and it is the branch above. It does not know that a reader
+    /// arrived from Ana's list, because nothing tells this call where the
+    /// search that found the book started; it only knows the book is *also*
+    /// on her list, which is a different sentence. A chain that is right most
+    /// of the time is worth less than one a reader can believe, because a
+    /// single fabricated hop is enough to make every honest one unreadable.
+    func inferredProvenance(for bookID: String) -> Provenance {
+        if let rec = recommendations.first(where: { $0.bookID == bookID && $0.isIncoming }),
+           let senderID = rec.fromReaderID {
+            return Provenance(
+                origin: .person(readerID: senderID, via: .directRecommendation),
+                reason: rec.reason.text,
+                date: Date()
+            )
+        }
+        return Provenance(origin: .ownSearch, reason: nil, date: Date())
+    }
+
     /// `nil` when Dewey can no longer answer for the ID — see
     /// `promoteForWrite`. Every caller already discarded the result; the
     /// optional is there so a refused write cannot be mistaken for a saved

@@ -2184,49 +2184,24 @@ struct BookDetailView: View {
     /// Provenance is inferred at the moment of saving, never asked for. If the
     /// book reached you through a person, Dewey already knows — a form here
     /// would defeat the entire idea.
+    ///
+    /// **The inference itself lives on the store now**
+    /// (`DeweyStore.inferredProvenance(for:)`), not here. It used to be a
+    /// private method on this view alone, which meant the quick "Want to
+    /// Read" tap on a search row — added so a reader does not have to open
+    /// this page just to save what they found — had no way to ask the same
+    /// question and risked calling a book "self-found" that a friend had
+    /// actually sent. One inference, called from every place a save can
+    /// happen.
     private func choose(_ status: ReadingStatus) {
         UISelectionFeedbackGenerator().selectionChanged()
         withAnimation(Theme.Motion.standard) {
             if store.entry(for: book.id) == nil {
-                store.save(book.id, status: status, provenance: inferredProvenance())
+                store.save(book.id, status: status, provenance: store.inferredProvenance(for: book.id))
             } else {
                 store.setStatus(status, for: book.id)
             }
         }
-    }
-
-    private func inferredProvenance() -> Provenance {
-        if let rec = incomingRecommendation, let senderID = rec.fromReaderID {
-            return Provenance(
-                origin: .person(readerID: senderID, via: .directRecommendation),
-                reason: rec.reason.text,
-                date: Date()
-            )
-        }
-        // **Nothing below this line guesses.**
-        //
-        // Two further inferences used to run here, and both stated a guess as a
-        // fact in the one place the product promises never to. If the book
-        // appeared on any public list, saving it attributed the save to that
-        // list's owner *and quoted their premise as your reason* — so a reader
-        // who searched for Middlemarch, read nothing but the title, and tapped
-        // Add to Library got a permanent provenance chain reading "Ana
-        // Beltrán → You" with Ana's sentence in quotation marks under it. The
-        // fallback below that attributed it to whichever follower happened to
-        // have rated it first.
-        //
-        // The premise of the feature is that Dewey already knows how a book
-        // reached you. It knows when somebody sent it — that is a real record,
-        // and it is the branch above. It does not know that you arrived from
-        // Ana's list, because nothing tells this page where the push came from;
-        // it only knows the book is *also* on her list, which is a different
-        // sentence. A chain that is right most of the time is worth less than
-        // one a reader can believe, because a single fabricated hop is enough
-        // to make every honest one unreadable.
-        //
-        // Restoring list and profile attribution means passing the arrival
-        // context into this view, not inspecting the book once it is open.
-        return Provenance(origin: .ownSearch, reason: nil, date: Date())
     }
 
     // `ratingBinding` and `toggleFavorite` lived here until this pass, and
@@ -2256,7 +2231,7 @@ struct BookDetailView: View {
                 rating: nil
             )
             if store.entry(for: book.id) == nil {
-                store.save(book.id, status: target.status, provenance: inferredProvenance())
+                store.save(book.id, status: target.status, provenance: store.inferredProvenance(for: book.id))
             }
         }
         mutate(&target)
