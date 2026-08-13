@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Copy this file to SupabaseConfig.plist (same folder) and fill both values.
+	     SupabaseConfig.plist is gitignored. See docs/SETUP-ACCOUNTS.md.
+
+	     SupabaseURL accepts either the full URL or the bare host.
+	     Supabase dashboard → Project Settings → Data API. -->
+	<key>SupabaseURL</key>
+	<string>https://YOUR-PROJECT-REF.supabase.co</string>
+
+	<!-- The publishable / anon key. Public by design; RLS is what protects data. -->
+	<key>SupabaseAnonKey</key>
+	<string>YOUR-ANON-KEY</string>
+</dict>
+</plist>

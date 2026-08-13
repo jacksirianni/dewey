@@ -1,0 +1,32 @@
+# Xcode build artifacts
+build/
+build-device/
+build-release/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+
+# Supabase project credentials — see docs/SETUP-ACCOUNTS.md
+Dewey/Dewey/Account/SupabaseConfig.plist
+
+# spike/: Open Library ingestion benchmark — raw/generated data and downloaded
+# binaries, not source. Reproducible from Open Library dumps; too large for git.
+spike/data/
+spike/bin/
+spike/dumps/
+spike/**/__pycache__/
+spike/**/*.pyc
+spike/ingest/*.jsonl
+spike/ingest/*.json
+spike/ingest/*.log
+spike/ingest_prod/*.jsonl
+spike/ingest_prod/*.json

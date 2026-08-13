@@ -1,0 +1,98 @@
+# Skill Observation Log
+
+Observations captured during task-oriented work.
+
+**Status key:** OPEN = not yet actioned | ACTIONED (YYYY-MM-DD) = skill updated/created | DECLINED (YYYY-MM-DD) = user decided not to pursue — resolved statuses always carry their resolution date
+
+---
+
+## 2026-08-06
+
+### Observation 1: Collapsing two similarly-named concepts into one field destroyed a deliberate distinction
+
+**Status:** OPEN
+**Date:** 2026-08-06
+**Session context:** Renaming a domain concept across an iOS app. A prior session had found the same idea wearing four different names across four screens backed by two model fields, and "fixed" it by consolidating into a single field and a single name. The user's next instruction was to split it back apart — the two fields had encoded two genuinely different concepts (an unlimited per-item mark, and a deliberately scarce curated set featured on a profile) that merely shared vocabulary.
+**Skill:** New skill candidate: vocabulary-vs-concept-audit (or an addition to a refactoring skill)
+**Type:** open-source
+**Phase/Area:** Domain-model refactoring; naming cleanups
+
+**Issue:** Duplicate *names* were treated as evidence of duplicate *concepts*. The consolidation was well-reasoned and well-documented in code comments, and still wrong: it made the curated set derive automatically from the unlimited mark, so a user who marked thirty items had four chosen on their behalf. The scarcity that made the feature meaningful was silently deleted by a rename.
+
+**Suggested improvement:** Before merging two fields that share vocabulary, check whether they differ on any of: cardinality (unlimited vs fixed-N), who writes them (incidental side effect vs deliberate act), and audience (private/incidental vs published). A difference on any axis means two concepts with a naming problem, not one concept with a duplication problem — fix the names and keep the fields.
+
+**Principle:** Shared vocabulary is not evidence of a shared concept. When a cleanup proposes collapsing two fields into one, the test is behavioural — cardinality, authorship, and audience — not lexical. Renaming is reversible; deleting a distinction that users relied on is not.
+
+### Observation 2: A concurrent agent session edited the same files mid-task, and the only signal was one tool warning
+
+**Status:** OPEN
+**Date:** 2026-08-06
+**Session context:** Redesigning an onboarding screen in an iOS app. Partway through, the Edit tool reported "the file had been modified on disk since you last read it." Investigation showed another session was performing a sweeping domain rename across the model, seed, and feature layers — the exact vocabulary the new screen was about to be written against.
+**Skill:** superpowers:verification-before-completion (and any skill that reads files before writing code)
+**Type:** open-source
+**Phase/Area:** Reading context before implementation; working in a shared workspace
+
+**Issue:** Context gathered at the start of a task silently expired. Code designed against the names read at minute two would have been written against names that no longer existed by minute fifteen. The single warning was easy to treat as routine, and there was no git repository to diff against — the only way to establish what had changed was sampling file modification times.
+
+**Suggested improvement:** Treat "file modified on disk" as a signal to re-verify the *domain facts* the plan rests on, not just to re-read the one file being edited. Sample modification times across the directories the task depends on; if several changed within minutes, assume a sweep is in flight and confirm it has settled before writing code against those names.
+
+**Principle:** In a shared workspace, gathered context has a shelf life. A modified-on-disk warning is about the whole dependency set, not the single file that raised it — re-verify the names and invariants the work assumes, not just the bytes about to be overwritten.
+
+### Observation 3: Shared build and output directories collide between concurrent sessions
+
+**Status:** OPEN
+**Date:** 2026-08-06
+**Session context:** A build failed with "unable to attach DB: database is locked. Possibly there are two concurrent builds running in the same filesystem location." Another session was building the same project into the same derived-data path at the same time.
+**Skill:** superpowers:verification-before-completion; any skill that runs builds or writes generated output
+**Type:** open-source
+**Phase/Area:** Running builds and tests
+
+**Issue:** The default build location is shared project state. When two sessions build concurrently, one fails with an error that looks like project corruption rather than contention, which invites debugging the wrong thing.
+
+**Suggested improvement:** When a build/test tool supports redirecting its output directory, point it at a session-private scratch path rather than the project default. Recognise lock/database-contention errors as contention, not corruption, and relocate rather than retry-in-place.
+
+**Principle:** Build artefacts are shared mutable state. Verification steps should write somewhere private to the session, so that a second agent working in the same checkout cannot make your verification fail for reasons unrelated to your change.
+
+### Observation 4: Driving the UI to reach an app state was far more expensive than writing the app's own persisted state
+
+**Status:** OPEN
+**Date:** 2026-08-06
+**Session context:** Needed to reach a first-launch onboarding screen in a simulator to visually verify a redesign. Reaching it via the app's debug menu required scrolling a modal sheet; repeated drag gestures instead dismissed the sheet, backgrounded the app, toggled an unrelated setting, and switched on Accessibility Zoom — roughly a dozen turns lost, and simulator state left dirty.
+**Skill:** New skill candidate: reaching-app-state-for-verification (or an addition to the `run` skill)
+**Type:** open-source
+**Phase/Area:** Visual verification on simulators/emulators
+
+**Issue:** Synthetic drag gestures are unreliable for scrolling within modal sheets and lists, and every failed gesture can produce an unintended side effect that has to be diagnosed and undone. The app already persisted its entire state to a single JSON file whose schema was readable from the source in under a minute; writing that file directly reached the target state deterministically and repeatably.
+
+**Suggested improvement:** Before driving UI to reach a state, look for a state file, launch argument, environment variable, or deep link that sets it directly. Prefer whichever is deterministic. Note that on reinstall the data container path changes, so resolve the container fresh on every write rather than caching it. Record which host-level settings were changed (appearance, text size, accessibility) and restore them at the end.
+
+**Principle:** To verify a screen, set the state, do not perform the state. Synthetic input is the least reliable and least reversible way to reach a precondition; the application's own persistence or launch configuration is deterministic, repeatable, and leaves nothing to clean up.
+
+### Observation 5: A layout bug that a successful compile and careful reasoning both missed was obvious in one screenshot
+
+**Status:** OPEN
+**Date:** 2026-08-06
+**Session context:** Building a full-bleed row of images deliberately wider than the screen. The reasoning — mark the row as fixed-size so it is not compressed, align it leading, let the scroll view clip the overflow — was explicit, written down, and wrong. The intrinsic width propagated up through the view tree and the enclosing scroll view sized *the entire screen* to the widest row, slicing the headline and body text down the middle on both edges.
+**Skill:** superpowers:verification-before-completion
+**Type:** open-source
+**Phase/Area:** Claiming completion on visual/layout work
+
+**Issue:** The build succeeded, so every automated signal available said the work was done. The defect was catastrophic and instantly visible, but only in a rendered screenshot. Reasoning about declarative layout is unusually prone to this: sizing negotiates in both directions, so a modifier intended to affect only a subview can silently change its ancestors.
+
+**Suggested improvement:** Add layout/visual changes to the list of work where "it compiles" is explicitly insufficient evidence. Require at least one rendered screenshot at the default configuration, and — where the platform scales type — one at the largest accessibility setting, before reporting a visual change as complete.
+
+**Principle:** For visual work, compilation proves the code is well-formed, not that the screen is. Evidence has to be of the same kind as the claim: a claim about how something looks is only supported by looking at it.
+
+### Observation 6: Runtime UI verification gave false negatives under a concurrent session
+
+**Status:** OPEN
+**Date:** 2026-08-06
+**Session context:** Verifying an iOS change in the simulator while another agent session held the same repo and simulator. Taps appeared not to register: each screenshot showed a pristine screen with no sign of the interaction. The cause was the other session rebuilding and relaunching the app between the tap and the screenshot, so every observation was of a freshly-launched process. Complements [[observation-2]] and [[observation-3]], which cover the file-level and build-directory collisions.
+**Skill:** New skill candidate: concurrent-workspace-detection
+**Phase/Area:** Runtime and UI verification
+
+**Issue:** The symptom — "my tap did nothing" — is indistinguishable from a wrong coordinate mapping, and that is the diagnosis an agent naturally reaches for. Several rounds went into re-deriving screen coordinates that had been correct all along. A separate symptom from the same cause: a mechanical cross-file rename by the other session left the code *looking* finished while the semantic half of the change was untouched, so trusting the file would have shipped stale logic under correct-looking names.
+
+**Suggested improvement:** Before concluding a UI interaction failed, confirm the process under test is the same one that was there a moment ago — check the PID, or the app's own launch state — and treat "screen is pristine again" as evidence of a relaunch rather than of a missed tap. More generally, when a file changes between tool calls without your edits explaining it, re-read before trusting it and never assume a mechanical rename carried the intent.
+
+**Principle:** A verification loop assumes the thing under test holds still. When it does not, "my action had no effect" and "the ground changed underneath it" produce identical evidence — so establish that the target is stable *before* debugging the action.
