@@ -231,7 +231,23 @@ struct BookDetailView: View {
     /// built for the opposite end of the reading. `statusControl` still opens
     /// the full editor for a reader who wants to say more.
     ///
-    /// **Gone once the book is actually Reading, or further along.** Neither
+    /// **A Reading book earns the same one tap, for the last step.**
+    ///
+    /// Before this, a book in progress offered nothing here — the switch fell
+    /// to `default` and a reader who had just turned the last page landed on
+    /// a section that, visually, has nothing to do with finishing. The only
+    /// routes down to a status pill reading "Reading" (which does open the
+    /// log editor, but says nothing about finishing before it is tapped) and
+    /// a "Log this read" button several rows further down, worded for the
+    /// editor in general rather than for the act of closing out a book.
+    ///
+    /// "Finish reading" opens that exact same editor — nothing new is built —
+    /// but says on its face what tapping it is for, in the same place and the
+    /// same directness "Start reading" already earned. `LogSheet` already
+    /// defaults a fresh entry's status to Finished (see its `init`), so this
+    /// hands the reader straight into the form they came to fill out.
+    ///
+    /// **Gone once the book is Finished, Paused or Did Not Finish.** Neither
     /// offer repeats a status the book already has — one quick action per
     /// state, and only for the next state, not the current one.
     @ViewBuilder
@@ -252,6 +268,15 @@ struct BookDetailView: View {
                 hint: "Marks \(book.title) as Reading"
             ) {
                 choose(.reading)
+            }
+        case .reading:
+            quickStatusButton(
+                title: "Finish reading",
+                symbol: ReadingStatus.finished.symbol,
+                hint: "Opens your reflection on \(book.title)"
+            ) {
+                logExisting = nil
+                showingLog = true
             }
         default:
             EmptyView()
