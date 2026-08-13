@@ -1773,27 +1773,28 @@ struct ProfileView: View {
 
     // MARK: Reviews
 
-    private var reviewTexts: [(id: String, bookID: String, text: String, rating: Rating?)] {
-        if isMe {
-            return store.diaryEntries
-                .filter { $0.hasPublishedReview }
-                .prefix(3)
-                .map { entry in
-                    (id: entry.id, bookID: entry.bookID, text: entry.review ?? "", rating: entry.rating)
-                }
-        }
-        return store.allReviews
-            .filter { $0.readerID == profile.id }
-            .sorted { $0.date > $1.date }
-            .prefix(3)
-            .map { review in
-                (id: review.id, bookID: review.bookID, text: review.preview, rating: review.rating)
-            }
+    /// All of them, newest first. `reviewsSection` below shows a preview of
+    /// this; `AllReviewsView` shows the whole thing — one source so the two
+    /// cannot disagree about what counts as published.
+    private var allReviewTexts: [(id: String, bookID: String, text: String, rating: Rating?)] {
+        publishedReviews(store, for: profile)
     }
 
+    private var reviewTexts: [(id: String, bookID: String, text: String, rating: Rating?)] {
+        Array(allReviewTexts.prefix(3))
+    }
+
+    /// **The one collection on this page that used to have no way past its
+    /// preview.** Favorite Books opens a picker, Lists opens `ListsIndexView`,
+    /// Ranking opens `RankedListView` — three taps to "see everything I've
+    /// curated." Reviews showed three and stopped: a reader's fourth published
+    /// review, written and deliberately shared, simply fell off the page with
+    /// nothing pointing at where it went. This closes that seam the same way
+    /// the other two do, from data already on hand.
     @ViewBuilder
     private var reviewsSection: some View {
         let items = reviewTexts
+        let total = allReviewTexts.count
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Space.base) {
                 SectionHead(kicker: Judgement.ReviewCopy.plural, trailing: nil)
@@ -1803,6 +1804,24 @@ struct ProfileView: View {
                     }
                 }
                 .pageMargin()
+
+                if total > items.count {
+                    NavigationLink {
+                        AllReviewsView(reader: isMe ? nil : profile)
+                    } label: {
+                        HStack(spacing: Theme.Space.tight) {
+                            Text("See all \(total)")
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(Theme.TypeScale.ui())
+                        .foregroundStyle(Theme.Palette.accent)
+                        .padding(.vertical, Theme.Space.snug)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pageMargin()
+                }
             }
         }
     }
@@ -2209,6 +2228,109 @@ struct ProfileView: View {
                     .stroke(Theme.Palette.accent.opacity(0.35), lineWidth: 0.5)
             )
             .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Published reviews
+
+/// Every review a reader has actually put in front of other people, newest
+/// first. Yours reads the diary directly — a review is "published" the
+/// moment `hasPublishedReview` says so, which is the same visibility choice
+/// the log sheet's "Who can see it" control already made, not a second gate.
+/// Someone else's reads the seeded `allReviews`, the only record Dewey holds
+/// of a stranger's writing.
+///
+/// One function so `ProfileView`'s preview and `AllReviewsView`'s full list
+/// can never disagree about what counts.
+private func publishedReviews(
+    _ store: DeweyStore,
+    for profile: ReaderProfile
+) -> [(id: String, bookID: String, text: String, rating: Rating?)] {
+    if profile.isMe {
+        return store.diaryEntries
+            .filter { $0.hasPublishedReview }
+            .map { entry in
+                (id: entry.id, bookID: entry.bookID, text: entry.review ?? "", rating: entry.rating)
+            }
+    }
+    return store.allReviews
+        .filter { $0.readerID == profile.id }
+        .sorted { $0.date > $1.date }
+        .map { review in
+            (id: review.id, bookID: review.bookID, text: review.preview, rating: review.rating)
+        }
+}
+
+/// **Where the preview on a profile leads once there is more than three.**
+///
+/// `ProfileView.reviewsSection` used to be the one taste collection on the
+/// page with no way past its own cap — Favorite Books opens a picker, Lists
+/// opens `ListsIndexView`, Ranking opens `RankedListView`, and Reviews just
+/// stopped at three with nothing pointing further. A reader's fourth
+/// published review was already real, already shared, and already
+/// permanently invisible from the one page that argues their taste. This is
+/// that page's missing "see everything" seam, built the same way the other
+/// two are: a title, a count, and the full list — no new field, no new
+/// privacy surface, just the existing published reviews in full.
+struct AllReviewsView: View {
+    var reader: ReaderProfile? = nil
+
+    @Environment(DeweyStore.self) private var store
+
+    private var profile: ReaderProfile { reader ?? store.me }
+    private var isMe: Bool { profile.isMe }
+
+    private var firstName: String {
+        profile.name.split(separator: " ").first.map(String.init) ?? profile.name
+    }
+
+    private var reviews: [(id: String, bookID: String, text: String, rating: Rating?)] {
+        publishedReviews(store, for: profile)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Space.base) {
+                Text(countLine)
+                    .font(Theme.TypeScale.support())
+                    .foregroundStyle(Theme.Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .pageMargin()
+
+                VStack(spacing: Theme.Space.base) {
+                    ForEach(reviews, id: \.id) { item in
+                        reviewCard(item.bookID, item.text)
+                    }
+                }
+                .pageMargin()
+            }
+            .padding(.top, Theme.Space.snug)
+            .padding(.bottom, Theme.Space.vast)
+        }
+        .background(Theme.Palette.paper)
+        .navigationTitle(Judgement.ReviewCopy.plural)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var countLine: String {
+        let n = reviews.count
+        let noun = n == 1 ? Judgement.ReviewCopy.title.lowercased() : Judgement.ReviewCopy.plural.lowercased()
+        return isMe ? "\(n) \(noun) you've published." : "\(n) \(noun) from \(firstName)."
+    }
+
+    /// Full text, unlike the six-line preview on a profile — a reader who
+    /// tapped through here came to read, not to be teased further.
+    private func reviewCard(_ bookID: String, _ text: String) -> some View {
+        let book: Book = store.book(bookID)
+        return NavigationLink(value: book) {
+            CardShell(kicker: book.title) {
+                Text(text)
+                    .font(Theme.TypeScale.prose())
+                    .foregroundStyle(Theme.Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .buttonStyle(.plain)
     }
