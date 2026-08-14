@@ -167,16 +167,18 @@ enum AccountServices {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: slotKey) }
     }
 
-    #if DEBUG
     /// Erases everything the stand-in has stored, for both slots, so the next
     /// launch is a genuine first launch.
+    ///
+    /// Not DEBUG-only: this is the other half of the RELEASE beta account's
+    /// reset control (see `SessionStore.resetLocalBetaAccount`), alongside
+    /// `DeweyStore.forgetActiveAccountData`.
     static func forgetAllLocalTestData() {
         let defaults = UserDefaults.standard
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("dewey.debug.local") {
             defaults.removeObject(forKey: key)
         }
     }
-    #endif
 }
 
 // MARK: - Local stand-ins

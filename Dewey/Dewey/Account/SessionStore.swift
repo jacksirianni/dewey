@@ -279,6 +279,23 @@ final class SessionStore {
         }
     }
 
+    /// Throws away the local stand-in account so the next launch is a genuine
+    /// first launch. Does nothing when a Supabase project is configured — there
+    /// is no safe local equivalent of deleting a server-side account, and
+    /// pretending otherwise would be the kind of affordance that quietly lies.
+    ///
+    /// Not DEBUG-only: this is what both the DEBUG prototype controls'
+    /// "Forget all local test accounts" and Profile's RELEASE-reachable "Reset
+    /// beta account" call — one function, so the two surfaces cannot drift
+    /// apart on what a reset actually does. `DeweyStore.forgetActiveAccountData`
+    /// is the other half; callers are expected to call both.
+    func forgetLocalAccount() {
+        guard AccountServices.backend == .localTesting else { return }
+        AccountServices.forgetAllLocalTestData()
+        lastError = nil
+        phase = .signedOut
+    }
+
     #if DEBUG
     /// Sends a signed-in reader back through the four taste steps.
     ///
@@ -291,17 +308,6 @@ final class SessionStore {
     func replayTasteOnboarding() {
         guard let profile = phase.profile else { return }
         phase = .needsTasteOnboarding(profile)
-    }
-
-    /// Throws away the local debug account so the next launch is a real first
-    /// launch. Does nothing when a Supabase project is configured — there is no
-    /// safe local equivalent of deleting a server-side account, and pretending
-    /// otherwise would be the kind of debug affordance that quietly lies.
-    func forgetLocalAccount() {
-        guard AccountServices.backend == .localTesting else { return }
-        AccountServices.forgetAllLocalTestData()
-        lastError = nil
-        phase = .signedOut
     }
 
     /// Switches which stand-in account signs in next, and drops the current

@@ -1848,6 +1848,17 @@ final class DeweyStore {
         persist()
     }
 
+    /// Deletes this account's on-disk reading data and clears memory — the
+    /// local-beta-account reset's other half, alongside `SessionStore`
+    /// forgetting the identity. Unlike `deactivate()`, which leaves the file
+    /// alone so a real sign-out can find it again, this is for the case where
+    /// signing back in reaches the *same* local stand-in identity (a fixed
+    /// UUID) and must not resurrect what was just reset.
+    func forgetActiveAccountData() {
+        if let activeAccount { Persistence.clear(for: activeAccount) }
+        deactivate()
+    }
+
     // MARK: - Debug hooks
 
     // TEMPORARY — the doors DebugActions.swift needs into private state.

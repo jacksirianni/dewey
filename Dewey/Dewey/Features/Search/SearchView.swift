@@ -583,6 +583,7 @@ struct ProfileView: View {
     var reader: ReaderProfile? = nil
 
     @Environment(DeweyStore.self) private var store
+    @Environment(SessionStore.self) private var session
 
     private var profile: ReaderProfile { reader ?? store.me }
     private var isMe: Bool { profile.isMe }
@@ -590,6 +591,10 @@ struct ProfileView: View {
     /// Presents the picker. Only ever true on your own profile — the four are
     /// the one part of a profile you can edit, and only yours.
     @State private var isChoosingFavoriteBooks = false
+
+    /// Confirmation for the local beta account's reset control. See
+    /// `accountSection`.
+    @State private var confirmingBetaReset = false
 
     /// How many shared books the overlap section lists before it starts
     /// counting instead. See `overlapContent`.
@@ -669,6 +674,7 @@ struct ProfileView: View {
                     wantToReadSection
                     distributionSection
                     discoveredSection
+                    accountSection
                 }
             }
             .padding(.top, Theme.Space.base)
@@ -683,6 +689,23 @@ struct ProfileView: View {
         .deweyNavigationTitle(isMe ? "You" : firstName)
         .sheet(isPresented: $isChoosingFavoriteBooks) {
             FavoriteBooksPicker()
+        }
+        .confirmationDialog(
+            "Reset your beta account?",
+            isPresented: $confirmingBetaReset,
+            titleVisibility: .visible
+        ) {
+            Button("Reset beta account", role: .destructive) {
+                store.forgetActiveAccountData()
+                session.forgetLocalAccount()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("""
+                 This clears your Dewey beta data on this device — your name, \
+                 your library, everything you've logged — and takes you back \
+                 to the beginning. This can't be undone.
+                 """)
         }
     }
 
@@ -2230,6 +2253,42 @@ struct ProfileView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Account
+
+    /// **Only while this account is the local beta stand-in.** A real,
+    /// Supabase-backed account has no local equivalent of deleting itself —
+    /// that needs the server — so this control does not exist at all once
+    /// `SupabaseConfig.plist` is present; there is nothing here to accidentally
+    /// mistake for production account management. See `AccountServices`.
+    ///
+    /// Deliberately last, below every taste section, and deliberately quiet:
+    /// this is not a feature of the profile, it is a way out of a testing mode
+    /// most readers who see this page will never be in.
+    @ViewBuilder
+    private var accountSection: some View {
+        if session.backend == .localTesting {
+            VStack(alignment: .leading, spacing: Theme.Space.snug) {
+                Rule()
+
+                Button(role: .destructive) {
+                    confirmingBetaReset = true
+                } label: {
+                    Text("Reset beta account")
+                        .font(Theme.TypeScale.ui())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.Palette.accent)
+
+                Text("Clears your Dewey data on this device and starts over. There's no account service connected to this build yet, so nothing beyond this device is affected.")
+                    .font(Theme.TypeScale.meta())
+                    .foregroundStyle(Theme.Palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .pageMargin()
+            .padding(.top, Theme.Space.loose)
+        }
     }
 }
 
