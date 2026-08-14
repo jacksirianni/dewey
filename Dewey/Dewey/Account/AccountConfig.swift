@@ -25,9 +25,9 @@ enum AccountConfig {
 
     /// Nil when no config file is present. Callers must handle that rather than
     /// force-unwrapping: an unconfigured **debug** build falls back to a local
-    /// account store so the flow can be walked end to end, and an unconfigured
-    /// **release** build refuses to pretend it has accounts at all. See
-    /// `AccountServices.live()`.
+    /// account store automatically so the flow can be walked end to end, and an
+    /// unconfigured **release** build shows an honest beta screen offering the
+    /// same local store as an explicit, remembered opt-in. See `AccountServices`.
     static let supabase: Supabase? = load()
 
     static var isConfigured: Bool { supabase != nil }

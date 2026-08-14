@@ -17,7 +17,9 @@ struct RootView: View {
     @Environment(SessionStore.self) private var session
 
     // TEMPORARY — prototype controls, reachable from the Library toolbar.
+    #if DEBUG
     @State private var showingDebug = false
+    #endif
 
     /// **The four tabs, or the cold start — never both** (§17).
     ///
@@ -153,7 +155,9 @@ struct RootView: View {
         NavigationStack {
             LibraryView()
                 .deweyDestinations()
+                #if DEBUG
                 .debugMenu(isPresented: $showingDebug)
+                #endif
         }
         .tabItem { Label("Library", systemImage: "books.vertical") }
     }

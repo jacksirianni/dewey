@@ -50,7 +50,11 @@ struct SignInView: View {
                 appleButton
             }
             #else
-            appleButton
+            if session.backend == .localTesting {
+                betaLocalMode
+            } else {
+                appleButton
+            }
             #endif
 
             if let error = session.lastError {
@@ -153,6 +157,28 @@ struct SignInView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+    #else
+    /// The RELEASE counterpart of `localTestingMode` above, for a tester who
+    /// tapped through the beta screen: same reasoning about not showing Apple's
+    /// button for an identity the stand-in ignores entirely, but in plain
+    /// language rather than the developer terms (`Row Level Security`, "Test
+    /// account A") DEBUG uses, and with no mention of the prototype controls —
+    /// there are none reachable in this build.
+    private var betaLocalMode: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.snug) {
+            BetaLocalBanner()
+
+            Button("Continue as a beta tester") {
+                Task {
+                    await session.signInWithApple(
+                        AppleCredential(idToken: "local-test", rawNonce: rawNonce, fullName: nil)
+                    )
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(session.isWorking)
+        }
+    }
     #endif
 }
 
@@ -172,6 +198,31 @@ struct LocalTestingBanner: View {
                     .font(Theme.TypeScale.ui())
                     .foregroundStyle(Theme.Palette.ink)
                 Text("Nothing here reaches a server. Handles are unique on this device only, and there is no Row Level Security to exercise.")
+                    .font(Theme.TypeScale.meta())
+                    .foregroundStyle(Theme.Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Theme.Space.snug)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Theme.Palette.accent, lineWidth: 1)
+        )
+    }
+}
+#else
+/// The RELEASE counterpart of `LocalTestingBanner`, in plain language for a
+/// beta tester rather than developer terms for a developer.
+struct BetaLocalBanner: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Space.tight) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Theme.Palette.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Beta account \u{2014} this device only")
+                    .font(Theme.TypeScale.ui())
+                    .foregroundStyle(Theme.Palette.ink)
+                Text("There's no account server behind this yet, so nothing you do here reaches one. Your account, your library and everything you log stay on this device.")
                     .font(Theme.TypeScale.meta())
                     .foregroundStyle(Theme.Palette.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)

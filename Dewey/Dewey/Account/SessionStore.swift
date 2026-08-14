@@ -47,10 +47,13 @@ final class SessionStore {
 
     var isAvailable: Bool { auth != nil && profiles != nil }
 
-    #if DEBUG
     /// Swaps the backend and starts over from `.restoring`. The full reset is
     /// the point: carrying a session across a backend change would mean a
     /// profile fetched from one system displayed under the other.
+    ///
+    /// Not DEBUG-only: the RELEASE beta screen needs this exact swap — from
+    /// `.unconfigured` (nil services) to the local stand-in — the moment a
+    /// tester taps through it.
     func reloadServices() async {
         let services = AccountServices.make()
         auth = services?.auth
@@ -59,7 +62,6 @@ final class SessionStore {
         phase = .restoring
         await restore()
     }
-    #endif
 
     // MARK: - Restoration
 

@@ -3,9 +3,9 @@ import Supabase
 
 /// Which account system the app is talking to, and the only place that decides.
 ///
-/// **The fallback is automatic in DEBUG, never silent, and impossible in
-/// RELEASE.** Those three clauses are the whole policy, and the middle one is
-/// what §18 was actually protecting.
+/// **The fallback is automatic in DEBUG, never silent, and opt-in in RELEASE.**
+/// Those three clauses are the whole policy, and the middle one is what §18 was
+/// actually protecting.
 ///
 /// §18 removed an automatic debug fallback because it produced the most
 /// dangerous possible failure mode: a developer running what looks like the real
@@ -26,20 +26,31 @@ import Supabase
 /// launch and the product, on every fresh checkout and every wiped simulator,
 /// during a phase of work that has nothing to do with accounts.
 ///
+/// **Release later gained its own opt-in, for the same underlying reason.** A
+/// release build with no `SupabaseConfig.plist` is what a TestFlight build looks
+/// like before anyone has stood up a Supabase project, and the original
+/// developer-only dead end there meant nobody outside Xcode could get past
+/// account setup at all. Same fix, same shape: the stand-in stays reachable only
+/// through an explicit tap on a screen that says plainly what it is, never
+/// automatically, and configuration still always wins.
+///
 /// Three modes:
 ///
 ///   * `.supabase` — `SupabaseConfig.plist` is present and parses. **Always
 ///     wins**, in both configurations. Adding the file is all it takes to be on
 ///     the real path; a configured build cannot enter local mode and is not
 ///     offered the choice.
-///   * `.localTesting` — a debug build with no configuration. Automatic, and
-///     announced everywhere it could matter. Can be left deliberately, which is
-///     how the `.unconfigured` screen stays reachable for testing.
-///   * `.unconfigured` — a release build with no configuration, or a debug build
-///     that opted out. The app shows a developer configuration screen and
-///     refuses to invent an account system. **A release build can never leave
-///     this state by itself**; there is no code path from here to the stand-in,
-///     and `LocalAuthService` does not compile into a release binary at all.
+///   * `.localTesting` — a debug build with no configuration, automatic; or a
+///     release build with no configuration, after the reader has tapped past the
+///     honest "beta, not yet connected" screen. Announced everywhere it could
+///     matter. Can be left deliberately in DEBUG, which is how the
+///     `.unconfigured` screen stays reachable for testing.
+///   * `.unconfigured` — no configuration, and nobody has opted into the
+///     stand-in yet. The app shows a screen naming that fact rather than
+///     inventing an account system: a developer configuration screen in DEBUG,
+///     an honest beta screen with a way in in RELEASE. **Neither build leaves
+///     this state by itself** — there is no automatic code path to the
+///     stand-in in RELEASE, only an explicit, remembered tap.
 enum AccountBackend: String {
     case supabase
     case localTesting
@@ -73,6 +84,12 @@ enum AccountServices {
     /// reconstruct.
     private static let localModeOptOutKey = "dewey.debug.localTestingMode.optedOut"
 
+    /// The RELEASE counterpart of `localModeOptOutKey`: positive rather than
+    /// negative, because the two builds default to opposite states. A debug
+    /// build starts in local mode and has to be told to leave; a release build
+    /// starts unconfigured and has to be told to enter — see `enterBetaLocalMode`.
+    private static let betaLocalModeKey = "dewey.beta.localAccountMode.enabled"
+
     static var backend: AccountBackend {
         // Configuration always wins, in both build configurations. This is the
         // line that makes "switch to the real path later" a matter of adding a
@@ -80,12 +97,14 @@ enum AccountServices {
         if AccountConfig.isConfigured { return .supabase }
         #if DEBUG
         if !UserDefaults.standard.bool(forKey: localModeOptOutKey) { return .localTesting }
+        #else
+        if UserDefaults.standard.bool(forKey: betaLocalModeKey) { return .localTesting }
         #endif
         return .unconfigured
     }
 
-    /// Nil when unconfigured. Callers must handle that by showing the developer
-    /// configuration state rather than by substituting anything.
+    /// Nil when unconfigured. Callers must handle that by showing the
+    /// unconfigured state rather than by substituting anything.
     static func make() -> (auth: AuthService, profiles: ProfileService)? {
         switch backend {
         case .supabase:
@@ -93,11 +112,7 @@ enum AccountServices {
             let client = SupabaseClient(supabaseURL: config.url, supabaseKey: config.anonKey)
             return (SupabaseAuthService(client: client), SupabaseProfileService(client: client))
         case .localTesting:
-            #if DEBUG
             return (LocalAuthService(), LocalProfileService())
-            #else
-            return nil
-            #endif
         case .unconfigured:
             return nil
         }
@@ -111,10 +126,24 @@ enum AccountServices {
         guard !AccountConfig.isConfigured else { return }
         UserDefaults.standard.set(!on, forKey: localModeOptOutKey)
     }
+    #else
+    /// The RELEASE way in, from the honest beta screen. The mirror image of
+    /// `setLocalTestingMode` above: entering is the deliberate act here, because
+    /// an unconfigured release build must never reach the stand-in by itself —
+    /// only a reader who has read what it is and tapped through it does.
+    static func enterBetaLocalMode() {
+        guard !AccountConfig.isConfigured else { return }
+        UserDefaults.standard.set(true, forKey: betaLocalModeKey)
+    }
+    #endif
 
     /// Which of the two stand-in accounts is signing in. Two, because proving
     /// that one reader's diary cannot reach another reader's session needs two
     /// readers, and this is the only way to get them without a Supabase project.
+    ///
+    /// A release build never switches slots — `useTestAccount` stays a DEBUG-only
+    /// tool in the prototype controls — so a beta tester's local account is
+    /// always slot `a`.
     enum TestAccount: String, CaseIterable, Identifiable {
         case a, b
 
@@ -138,6 +167,7 @@ enum AccountServices {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: slotKey) }
     }
 
+    #if DEBUG
     /// Erases everything the stand-in has stored, for both slots, so the next
     /// launch is a genuine first launch.
     static func forgetAllLocalTestData() {
@@ -149,17 +179,17 @@ enum AccountServices {
     #endif
 }
 
-#if DEBUG
-
 // MARK: - Local stand-ins
 
-/// A two-account stand-in for a checkout with no Supabase project.
+/// A local, on-device stand-in for a checkout with no Supabase project.
 ///
-/// It exists so the first-run flow and — more importantly — the account-scoped
-/// local persistence of §18 can be exercised before anyone has created a
-/// project. **It is testing infrastructure, not a fallback**: it is constructed
-/// only when someone has explicitly chosen local mode, a configured build never
-/// reaches it, and a release build cannot compile it.
+/// It exists so the first-run flow and the account-scoped local persistence of
+/// §18 can be exercised before anyone has created a project — and, in RELEASE,
+/// so a build with no project yet can still be handed to an external tester
+/// instead of dead-ending on a developer screen. **It is testing
+/// infrastructure, not a fallback**: it is constructed only when local mode has
+/// been explicitly chosen — automatically in DEBUG, by a tap past the beta
+/// screen in RELEASE — and a configured build never reaches it either way.
 ///
 /// What it does not do, and what therefore cannot be concluded from it passing:
 /// no cross-device uniqueness, no RLS, no real Apple identity, no multi-device
@@ -255,5 +285,3 @@ final class LocalProfileService: ProfileService {
         store.set(try JSONEncoder().encode(profile), forKey: key("profile", profile.userID))
     }
 }
-
-#endif

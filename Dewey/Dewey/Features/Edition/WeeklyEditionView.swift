@@ -13,7 +13,10 @@ import SwiftUI
 /// ends, and the ending is designed.
 struct WeeklyEditionView: View {
     @Environment(DeweyStore.self) private var store
+
+    #if DEBUG
     @State private var showingDebug = false   // TEMPORARY — prototype controls
+    #endif
 
     var body: some View {
         ScrollView {
@@ -45,7 +48,9 @@ struct WeeklyEditionView: View {
         .background(Theme.Palette.paper)
         .scrollIndicators(.hidden)
         .deweyNavigationTitle("Dewey")
+        #if DEBUG
         .debugMenu(isPresented: $showingDebug)
+        #endif
     }
 
     /// This week's cards, filtered to who you actually follow (§13.7).
