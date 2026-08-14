@@ -38,7 +38,7 @@ The last line prints `ALL CHECKS PASSED` or a list of failures.
 |---|---|---|
 | A Supabase project | Identity, follows, Favorite Books | Free tier is fine |
 | **Paid** Apple Developer Program membership | Sign in with Apple cannot be enabled on a free account | $99/yr |
-| A bundle identifier you own | Currently `com.dewey.prototype`, which you probably want to change | — |
+| A bundle identifier you own | `com.jacksirianni.dewey` | — |
 
 If you do not have the paid membership yet, do steps 1–3 anyway. Supabase will
 be live, and the simulator's debug path keeps working until Apple is sorted.
@@ -105,9 +105,9 @@ the sign-in screen the moment configuration exists.
 
 1. <https://developer.apple.com/account> → **Certificates, Identifiers & Profiles**
    → **Identifiers**.
-2. Find or create the App ID for your bundle identifier. If you are keeping
-   `com.dewey.prototype`, create that; if you are changing it, do that first in
-   Xcode (step 6) and create the matching identifier here.
+2. Find or create the App ID for your bundle identifier, `com.jacksirianni.dewey`
+   (already set in Xcode, step 6). If you change it to something else, do that
+   first in Xcode and create the matching identifier here.
 3. Edit the App ID → tick **Sign In with Apple** → **Save**.
    - Leave it as a **primary** App ID. The "group with an existing primary" option
      is for sharing one Apple ID relationship across several apps, which Dewey
@@ -121,7 +121,7 @@ Dewey deliberately does not use.
 
 1. Dashboard → **Authentication** → **Sign In / Providers** → **Apple**.
 2. Toggle **Enable Sign in with Apple**.
-3. In **Client IDs**, enter your bundle identifier — `com.dewey.prototype`, or
+3. In **Client IDs**, enter your bundle identifier — `com.jacksirianni.dewey`, or
    whatever you changed it to. This is the field that matters; Supabase verifies
    the `aud` claim of Apple's identity token against it.
 4. Leave **Secret Key (for OAuth)** empty. It is only used by the web flow.

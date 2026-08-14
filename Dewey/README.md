@@ -27,7 +27,7 @@ cd /Users/jacksirianni/dewey/Dewey && DEVELOPER_DIR=/Applications/Xcode.app/Cont
 Then install and launch on a booted simulator:
 
 ```bash
-xcrun simctl boot "iPhone 17 Pro"; xcrun simctl install booted /Users/jacksirianni/dewey/Dewey/build/Debug-iphonesimulator/Dewey.app && xcrun simctl launch booted com.dewey.prototype
+xcrun simctl boot "iPhone 17 Pro"; xcrun simctl install booted /Users/jacksirianni/dewey/Dewey/build/Debug-iphonesimulator/Dewey.app && xcrun simctl launch booted com.jacksirianni.dewey
 ```
 
 ### On your own iPhone
@@ -35,7 +35,7 @@ xcrun simctl boot "iPhone 17 Pro"; xcrun simctl install booted /Users/jacksirian
 1. Plug the phone in and trust the Mac.
 2. In Xcode, select the project in the navigator → the **Dewey** target → **Signing & Capabilities**.
 3. Set **Team** to your personal Apple ID (add it under Xcode → Settings → Accounts if it isn't there). Xcode will provision automatically.
-4. Change the bundle identifier if `com.dewey.prototype` collides — e.g. `com.jacksirianni.dewey`.
+4. The bundle identifier is `com.jacksirianni.dewey`; change it if that collides with one you already own.
 5. Select your iPhone as the run destination and ⌘R.
 6. First launch only: on the phone, **Settings → General → VPN & Device Management → Developer App → Trust**.
 

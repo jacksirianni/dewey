@@ -11,7 +11,7 @@ Everything you need to get the prototype onto your own iPhone and put it through
 | **Project file** | `/Users/jacksirianni/dewey/Dewey/Dewey.xcodeproj` |
 | **Scheme** | `Dewey` — the only one |
 | **Target** | `Dewey` |
-| **Bundle identifier** | `com.dewey.prototype` |
+| **Bundle identifier** | `com.jacksirianni.dewey` |
 | **Deployment target** | iOS 17.0 |
 | **Signing style** | Automatic, with **no team set** — you set it once, in step 4 |
 
@@ -52,7 +52,7 @@ Wait for the activity indicator in the toolbar to finish before doing anything e
 4. Tick **Automatically manage signing** if it isn't already.
 5. Set **Team** to your personal team — it appears as *"Jack Sirianni (Personal Team)"*.
 
-**If you see "Failed to register bundle identifier":** `com.dewey.prototype` is already taken on Apple's side. Change **Bundle Identifier** to something unique — `com.jacksirianni.dewey` — and the error clears.
+**If you see "Failed to register bundle identifier":** `com.jacksirianni.dewey` is already taken on Apple's side (unlikely, but possible if someone else registered it first). Change **Bundle Identifier** to a variant you own and the error clears.
 
 That is the whole signing setup. There is nothing else to configure.
 
