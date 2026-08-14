@@ -299,12 +299,20 @@ struct OnboardingView: View {
     /// picked, via the same `overlap(with:)` the profile uses. Readers with no
     /// overlap are not shown at all rather than shown with a vague reason — "you
     /// might like them" is the sentence this app was built to avoid.
+    ///
+    /// This is also the first place the reader meets Dewey's cast of sample
+    /// readers — the same four who later show up sending recommendations,
+    /// writing reviews, and "starting" books in the edition. Everything about
+    /// them downstream (their follower counts, their replies, the closure
+    /// banner) is real UI wired to invented people, so the one sentence that
+    /// says so has to land here, before the reader follows any of them, not on
+    /// each card afterward.
     private var peopleStep: some View {
         VStack(alignment: .leading, spacing: Theme.Space.roomy) {
             head(
                 "Four of four",
                 "People who've read them too.",
-                "Dewey's editions come from the readers you follow. These are suggested because of what you just picked — nothing else."
+                "Dewey's editions come from the readers you follow. These are suggested because of what you just picked — nothing else. They're sample readers, not other people using Dewey yet."
             )
 
             if suggestedReaders.isEmpty {
