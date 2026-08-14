@@ -64,6 +64,9 @@ struct RootView: View {
         // phase is `.ready`.
         store.onFavoriteBooksChanged = { [session] in session.pushFavoriteBooks($0) }
         store.onFollowsChanged = { [session] in session.pushSeedFollows(Array($0)) }
+        // A local-beta account has nobody on the other end to start the book —
+        // see `DeweyStore.simulatesRecipientClosure`.
+        store.simulatesRecipientClosure = session.backend.isReal
 
         // **The reading data is swapped before the identity is** (§18). Local
         // state is keyed by account: activating loads this reader's file and

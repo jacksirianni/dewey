@@ -57,6 +57,17 @@ final class DeweyStore {
     /// Dewey that is a gift rather than a demand.
     var pendingClosure: Recommendation?
 
+    /// Whether `send(bookID:to:reason:)` may schedule the closure banner —
+    /// the simulated "they started it" reply that arrives on its own after a
+    /// delay. Set by `RootView` from `AccountBackend.isReal` (see
+    /// `onFavoriteBooksChanged` above for why a stored flag rather than a
+    /// reference to `SessionStore`). Off by default: a context that never
+    /// sets this explicitly gets the honest behaviour — nothing manufactured
+    /// — rather than the fabricated one. `DebugActions.debugFireClosure()`
+    /// is unaffected; it is an explicit, developer-triggered action, not
+    /// something the send flow schedules on its own.
+    var simulatesRecipientClosure = false
+
     // MARK: - The catalog (§16)
 
     /// The external catalog behind the provider seam. Open Library today;
@@ -1796,7 +1807,9 @@ final class DeweyStore {
         )
         recommendations.append(rec)
         persist()
-        scheduleClosure(for: rec.id)
+        if simulatesRecipientClosure {
+            scheduleClosure(for: rec.id)
+        }
     }
 
     func respond(to recID: String, accept: Bool) {
@@ -1824,6 +1837,11 @@ final class DeweyStore {
     /// The delay is long on purpose. At six seconds it landed while the send
     /// confirmation was still on screen and read as the system echoing your own
     /// tap rather than a person acting.
+    ///
+    /// Only reachable through `send(bookID:to:reason:)` when
+    /// `simulatesRecipientClosure` is true — without a real recipient behind
+    /// the account, the same timing that keeps this from reading as an echo
+    /// of your own tap is what would make it read as a stranger's.
     private func scheduleClosure(for recID: String) {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(20))
