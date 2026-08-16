@@ -78,21 +78,35 @@ struct HomeView: View {
     /// see-all can do. This is the same filter at the browser's own default.
     private static let heroExpanded = BrowseFilter(period: .thisWeek)
 
+    /// Home's second shelf: the same popularity signal as `hero`, narrowed to
+    /// books whose first publication is recent rather than to a reading
+    /// window. Reuses `Decade`'s year-range machinery — see
+    /// `BrowseFilter.Decade.recentlyPublished` — so it is a filter the catalog
+    /// already answers honestly, not a signal Dewey invented.
+    private static let recent = BrowseFilter(period: .allTime, decade: .recentlyPublished, limit: 10)
+    private static let recentExpanded = BrowseFilter(period: .allTime, decade: .recentlyPublished)
+
     /// Where "See all" goes from the genre and decade blocks: the browser
     /// itself, with nothing narrowed, so every genre and decade is one menu
     /// away.
     private static let everything = BrowseFilter(period: .allTime)
 
     @State private var answer: BrowseAnswer?
+    @State private var recentAnswer: BrowseAnswer?
 
     private var phase: BrowseAnswer.Phase {
         BrowseAnswer.phase(of: answer, for: Self.hero.catalogQuery)
+    }
+
+    private var recentPhase: BrowseAnswer.Phase {
+        BrowseAnswer.phase(of: recentAnswer, for: Self.recent.catalogQuery)
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.loose) {
                 popularShelf
+                recentShelf
                 genreBlock
                 decadeBlock
             }
@@ -103,6 +117,7 @@ struct HomeView: View {
         .background(Theme.Palette.paper.ignoresSafeArea())
         .deweyNavigationTitle("Home")
         .task(id: Self.hero.catalogQuery) { await load() }
+        .task(id: Self.recent.catalogQuery) { await loadRecent() }
     }
 
     private func load() async {
@@ -116,6 +131,20 @@ struct HomeView: View {
         } catch {
             guard !Task.isCancelled else { return }
             answer = BrowseAnswer(query: asked, books: nil)
+        }
+    }
+
+    private func loadRecent() async {
+        let asked = Self.recent.catalogQuery
+        do {
+            let books = try await store.browseCatalog(asked)
+            guard !Task.isCancelled else { return }
+            recentAnswer = BrowseAnswer(query: asked, books: books)
+        } catch is CancellationError {
+            // Superseded; the newer task owns this state.
+        } catch {
+            guard !Task.isCancelled else { return }
+            recentAnswer = BrowseAnswer(query: asked, books: nil)
         }
     }
 
@@ -235,6 +264,80 @@ struct HomeView: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .pageMargin()
+    }
+
+    // MARK: - Recently published
+
+    /// The page's second reason to keep scrolling. Same shelf mechanics as
+    /// `popularShelf` — heading-as-link, honesty line, horizontal rail of
+    /// `BrowseCover` — with no standfirst of its own, since that line is
+    /// the page's framing and belongs above the first shelf only.
+    private var recentShelf: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.base) {
+            recentShelfHead
+            recentShelfContent
+        }
+    }
+
+    private var recentShelfHead: some View {
+        NavigationLink(value: Self.recentExpanded) {
+            VStack(alignment: .leading, spacing: Theme.Space.hair) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.snug) {
+                    Text(Self.recentKicker).kickerStyle(Theme.Palette.ink)
+                    Spacer(minLength: 0)
+                    Text("See all")
+                        .font(Theme.TypeScale.meta())
+                        .foregroundStyle(Theme.Palette.accent)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.Palette.accent)
+                }
+                Text(Self.recentProvenance)
+                    .font(Theme.TypeScale.meta())
+                    .foregroundStyle(Theme.Palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(.vertical, Theme.Space.tight)
+            .contentShape(Rectangle())
+            .pageMargin()
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(Self.recentKicker). \(Self.recentProvenance).")
+        .accessibilityHint("Opens the full shelf")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// Names the window, not a claim of editorial notability Dewey has no
+    /// way to back — see `BrowseFilter.Decade.recentlyPublished`.
+    private static let recentKicker = "Recently published"
+
+    /// The ordering is the same real signal as `provenance`: how widely a
+    /// book is shelved, just filtered to a recent publication window rather
+    /// than a reading one.
+    private static let recentProvenance = "New to \(Vocabulary.widerCatalogue.lowercased()), ranked by how widely it's read"
+
+    @ViewBuilder
+    private var recentShelfContent: some View {
+        switch recentPhase {
+        case .loading:
+            quietLine("Looking at what's new…")
+        case .failed:
+            quietLine("Couldn't reach \(Vocabulary.widerCatalogue.lowercased()) just now. It'll be here when the connection is.")
+        case .empty:
+            quietLine("\(Vocabulary.widerCatalogue) had nothing recently published to report.")
+        case .loaded(let books):
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: Theme.Space.base) {
+                    ForEach(books) { book in
+                        BrowseCover(book: book, width: Metrics.heroCover)
+                    }
+                }
+                .pageMargin()
+                .padding(.bottom, Theme.Space.tight)
+            }
+        }
     }
 
     // MARK: - Ways in

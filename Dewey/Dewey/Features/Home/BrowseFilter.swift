@@ -146,6 +146,20 @@ struct BrowseFilter: Hashable {
         /// results that did not match the word. The other five are in the
         /// browser's menu, where they can also be combined with a genre.
         static let featured: [Decade] = Array(all.prefix(4))
+
+        /// A rolling window, not a fixed decade — the second shelf Home
+        /// offers, and the reason this is computed rather than another entry
+        /// in `all`.
+        ///
+        /// The lower bound is last calendar year, not this one: `first_publish_year`
+        /// is the earliest recorded date for the *work*, so it never moves
+        /// with a reprint, but a window opening on January 1st would leave the
+        /// shelf thin every January. The upper bound stays open so a book
+        /// cataloged with next year's date is not excluded from its own shelf.
+        static var recentlyPublished: Decade {
+            let year = Calendar.current.component(.year, from: Date())
+            return Decade(label: "Recently published", from: year - 1, through: nil)
+        }
     }
 
     var period: Period = .thisWeek
