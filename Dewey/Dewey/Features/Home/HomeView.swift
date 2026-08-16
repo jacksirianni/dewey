@@ -5,27 +5,83 @@ import SwiftUI
 /// **Home and Edition answer different questions and must never merge.**
 /// The Edition asks *what is reaching me through people whose taste I trust* —
 /// it is finite, attributed, and ends. Home asks *what is happening in books
-/// right now, and what can I go and look at* — it is unattributed, external,
-/// and browseable. The moment Home starts carrying what your friends are
-/// reading it has eaten the Edition; the moment the Edition starts carrying
-/// charts it has stopped being a letter from people.
+/// right now* — it is unattributed, external, and browseable. The moment Home
+/// starts carrying what your friends are reading it has eaten the Edition; the
+/// moment the Edition starts carrying charts it has stopped being a letter
+/// from people.
 ///
-/// So the register is different on purpose: a bookstore's front table, not a
-/// dashboard. Covers at a size you can actually read, one shelf that goes
-/// somewhere, and a way in to the rest of the catalogue. No counts, no
-/// percentages, no badges, nothing that moves while you look at it.
+/// **This page is editorial first and utilitarian second**, which is the pass
+/// that produced its current shape. It was built the other way round: an
+/// explanatory paragraph, then a shelf, then eleven outlined genre pills
+/// wrapping over five lines, then a nine-item decade scroller. Everything on
+/// it was true and most of it was *controls*, so the tab read as a filter panel
+/// with some covers at the top — and a reader had to get past four lines of
+/// prose before reaching a single book.
+///
+/// What changed, in order of how much it mattered:
+///
+/// - The paragraph explaining the Home/Edition split is gone. A reader does
+///   not need the product architecture narrated to them; they need books. One
+///   quiet line survives.
+/// - The covers grew (see `Metrics.heroCover`) and now show two and a half
+///   across, so the shelf reads as something you push sideways rather than as
+///   a three-column grid that happens to be cut off.
+/// - Genre went from eleven pills to six names in two columns with a way
+///   through to the rest. Decade went from nine chips to four and a link.
+///   **Nothing was removed from the product** — every genre and every decade
+///   is still in `BrowseBooksView`, which is the screen that is supposed to
+///   hold controls. Home now inspires the browse; Browse contains it.
 ///
 /// **Every figure behind this screen belongs to somebody else** (§16). Dewey
 /// has a few dozen readers and no business publishing a chart; what it can
-/// honestly do is quote one, and say whose it is. `BrowseFilter.sourceLine`
-/// is that sentence and it appears on both surfaces this screen leads to.
+/// honestly do is quote one, and say whose it is. The long disclaimer that
+/// used to sit under the shelf is now a short line beside the heading — the
+/// full statement lives on `BrowseFilter.sourceLine`, where a reader is
+/// actually reading rankings rather than glancing at a shelf.
 struct HomeView: View {
     @Environment(DeweyStore.self) private var store
+
+    /// Sizes this page is opinionated about, kept together because they are
+    /// arithmetic rather than taste.
+    private enum Metrics {
+        /// **Two and a half covers across, which is the whole trick.**
+        ///
+        /// At 118 points a phone showed almost exactly three covers with the
+        /// third barely clipped, and a rail that ends flush at the margin is
+        /// indistinguishable from a grid — there was nothing on screen saying
+        /// it moved. 140 lands the third cover half on and half off at every
+        /// phone width the app ships to (2.3 across on the smallest, 2.8 on
+        /// the largest), so the invitation to swipe is always visible.
+        ///
+        ///     margin + W + gap + W + gap  =  20 + 140 + 16 + 140 + 16 = 332
+        ///     of 402 points, leaving 70 — half of the next cover.
+        ///
+        /// Bigger, not smaller: the covers are the content, and the fix for a
+        /// grid-like rail is never to shrink the thing the page is about.
+        static let heroCover: CGFloat = 140
+
+        /// The Browse grid's cover. Smaller because that screen is a
+        /// comparison surface showing two dozen at once.
+        static let gridCover: CGFloat = 104
+    }
 
     /// The hero's question. Fixed — the shelf is *the* week's shelf, and a
     /// reader who wants a different one is one tap from the browser where the
     /// controls live.
     private static let hero = BrowseFilter(period: .thisWeek, limit: 10)
+
+    /// The same question at the size a whole screen deserves.
+    ///
+    /// "See all" used to push `hero` itself, which carries the shelf's limit
+    /// of ten — so the full browser opened showing exactly the ten covers the
+    /// reader had just swiped through, which is the least useful thing a
+    /// see-all can do. This is the same filter at the browser's own default.
+    private static let heroExpanded = BrowseFilter(period: .thisWeek)
+
+    /// Where "See all" goes from the genre and decade blocks: the browser
+    /// itself, with nothing narrowed, so every genre and decade is one menu
+    /// away.
+    private static let everything = BrowseFilter(period: .allTime)
 
     @State private var answer: BrowseAnswer?
 
@@ -36,11 +92,11 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.loose) {
-                standfirst
                 popularShelf
-                browseBlock
+                genreBlock
+                decadeBlock
             }
-            .padding(.top, Theme.Space.base)
+            .padding(.top, Theme.Space.snug)
             .padding(.bottom, Theme.Space.vast)
         }
         .scrollIndicators(.hidden)
@@ -63,57 +119,89 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Standfirst
+    // MARK: - Popular this week
 
-    /// One line, and it is the line that stops this tab being Search with
-    /// bigger covers. It says what Home is *for*, which is the half of the
-    /// product that a grid of jackets cannot say on its own — and it says it
-    /// by naming the thing Home is not, because the tab immediately to the
-    /// right is that thing.
+    /// The front table, and the first thing on the page.
+    ///
+    /// Standfirst, heading, one line of provenance, covers — four elements
+    /// before the books instead of a paragraph. The standfirst is the only
+    /// editorial voice left and it is one line: what this tab is *for*, said
+    /// once, quietly, rather than explained.
+    private var popularShelf: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.base) {
+            VStack(alignment: .leading, spacing: Theme.Space.tight) {
+                standfirst
+                shelfHead
+            }
+            shelfContent
+        }
+    }
+
+    /// One muted line, where a four-line paragraph about the difference
+    /// between Home and the Edition used to be.
+    ///
+    /// It still does that paragraph's job — it says this is the world's taste
+    /// rather than your circle's — but by *sounding* like the world rather
+    /// than by describing an information architecture. A reader who wants the
+    /// distinction gets it from the two tabs behaving differently, which is
+    /// where a distinction is supposed to live.
     private var standfirst: some View {
-        Text("Books at large — what the world is reading, rather than the people you follow.")
-            .font(Theme.TypeScale.prose())
+        Text("What the reading world is into right now.")
+            .font(Theme.TypeScale.support())
             .foregroundStyle(Theme.Palette.inkSoft)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .pageMargin()
     }
 
-    // MARK: - Popular this week
-
-    /// The front table.
+    /// Kicker left, way through on the right, provenance underneath.
     ///
-    /// A rail rather than a grid: ten covers at 118 points is one screen-width
-    /// and a swipe, where the same ten stacked would be most of the tab. It is
-    /// also the shape that reads as *a selection somebody laid out* instead of
-    /// search results, which is the difference this whole screen is trying to
-    /// hold on to.
-    private var popularShelf: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.base) {
-            shelfHead
-            shelfContent
-        }
-    }
-
-    /// The heading **is** the way in, rather than a separate "See all" under
-    /// the rail. One target, on the words a reader is already reading, and it
-    /// arrives before the covers rather than after ten of them.
+    /// The whole row is the link rather than a small "See all" word, so the
+    /// target is the full measure and a reader who taps the heading — which
+    /// they will, because it is the biggest thing on the line — gets what
+    /// they expected.
     private var shelfHead: some View {
-        NavigationLink(value: Self.hero) {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.tight) {
-                Text(Self.hero.headline).kickerStyle(Theme.Palette.ink)
-                Image(systemName: "arrow.right")
-                    .font(.system(.caption2, weight: .semibold))
-                    .foregroundStyle(Theme.Palette.accent)
-                Spacer(minLength: 0)
+        NavigationLink(value: Self.heroExpanded) {
+            VStack(alignment: .leading, spacing: Theme.Space.hair) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.snug) {
+                    Text(Self.hero.headline).kickerStyle(Theme.Palette.ink)
+                    Spacer(minLength: 0)
+                    Text("See all")
+                        .font(Theme.TypeScale.meta())
+                        .foregroundStyle(Theme.Palette.accent)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.Palette.accent)
+                }
+                // **The honesty line, at the size a glance needs.** It used to
+                // be two sentences under the covers — "What the wider
+                // catalogue has been opening this week. Not Dewey's own
+                // figures." — which is the right claim in the wrong register:
+                // a disclaimer that large reads as an apology for the shelf.
+                // Beside the heading it does the same work in five words, and
+                // the sentence it shortened is still stated in full on
+                // `BrowseBooksView`, which is where a reader actually studies
+                // an ordering rather than glancing at one.
+                Text(Self.provenance)
+                    .font(Theme.TypeScale.meta())
+                    .foregroundStyle(Theme.Palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
             }
             .padding(.vertical, Theme.Space.tight)
             .contentShape(Rectangle())
             .pageMargin()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(Self.hero.headline). Browse all.")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(Self.hero.headline). \(Self.provenance).")
+        .accessibilityHint("Opens the full shelf")
+        .accessibilityAddTraits(.isButton)
     }
+
+    /// Names the catalogue and not the app, in that order, so there is no
+    /// reading of this line on which the ranking belongs to Dewey.
+    private static let provenance = "Trending across \(Vocabulary.widerCatalogue.lowercased())"
 
     @ViewBuilder
     private var shelfContent: some View {
@@ -125,21 +213,14 @@ struct HomeView: View {
         case .empty:
             quietLine("\(Vocabulary.widerCatalogue) had nothing to report this week.")
         case .loaded(let books):
-            VStack(alignment: .leading, spacing: Theme.Space.snug) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: Theme.Space.base) {
-                        ForEach(books) { book in
-                            BrowseCover(book: book, width: 118)
-                        }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: Theme.Space.base) {
+                    ForEach(books) { book in
+                        BrowseCover(book: book, width: Metrics.heroCover)
                     }
-                    .pageMargin()
-                    .padding(.bottom, Theme.Space.tight)
                 }
-                Text(Self.hero.sourceLine)
-                    .font(Theme.TypeScale.meta())
-                    .foregroundStyle(Theme.Palette.inkFaint)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .pageMargin()
+                .pageMargin()
+                .padding(.bottom, Theme.Space.tight)
             }
         }
     }
@@ -156,63 +237,131 @@ struct HomeView: View {
             .pageMargin()
     }
 
-    // MARK: - Browse
+    // MARK: - Ways in
 
-    /// The other half of a front table: the shelves behind it, labelled.
+    /// **Six genres, not eleven, and set as type rather than as pills.**
     ///
-    /// Type, not covers, and that is deliberate. The rail above is the visual
-    /// argument; putting a second wall of jackets under it would make the page
-    /// noisy and would also be dishonest about what these are — a genre is a
-    /// door, not a book. Chips are the app's existing word for "a way to
-    /// narrow", used on the Library's status filter and Search's genre rail,
-    /// so nothing new has to be learned here.
+    /// The full set was a wall of outlined capsules wrapping over five lines,
+    /// which is a control surface: it asks the reader to choose from a
+    /// taxonomy before anything interesting happens, and it took up more of
+    /// the page than the books did. Six names in two columns reads as the
+    /// contents page of something rather than as a filter bar, costs three
+    /// lines, and — the part that matters — is an invitation instead of a
+    /// requirement, because the other five are one tap away under "See all".
     ///
-    /// Every chip is a `NavigationLink` carrying a whole `BrowseFilter`, which
-    /// is why there is no separate screen per genre and no separate screen per
-    /// decade: they push the same browser with a different value in it.
-    private var browseBlock: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.roomy) {
-            VStack(alignment: .leading, spacing: Theme.Space.base) {
-                SectionHead(kicker: "Browse by genre")
-                FlowLayout(spacing: Theme.Space.snug, lineSpacing: Theme.Space.tight) {
-                    ForEach(BrowseFilter.Genre.all) { genre in
-                        chip(genre.name, filter: BrowseFilter(period: .allTime, genre: genre))
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .pageMargin()
-            }
-
-            VStack(alignment: .leading, spacing: Theme.Space.base) {
-                SectionHead(kicker: "Browse by decade")
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Theme.Space.snug) {
-                        ForEach(BrowseFilter.Decade.all) { decade in
-                            chip(decade.label, filter: BrowseFilter(period: .allTime, decade: decade))
-                        }
-                    }
-                    .pageMargin()
-                    .padding(.vertical, Theme.Space.hair)
+    /// Each cell still pushes a whole `BrowseFilter`, exactly as the pills
+    /// did. Nothing about the browse architecture changed here; this is
+    /// presentation.
+    private var genreBlock: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.snug) {
+            blockHead("Browse by genre", seeAll: Self.everything, spoken: "See all genres")
+            LazyVGrid(columns: twoColumns, alignment: .leading, spacing: 0) {
+                ForEach(BrowseFilter.Genre.featured) { genre in
+                    genreCell(genre)
                 }
             }
+            .pageMargin()
         }
     }
 
-    private func chip(_ title: String, filter: BrowseFilter) -> some View {
-        NavigationLink(value: filter) {
-            Text(title)
-                // `ChipStyle` is a `ButtonStyle` and this is a link, so the
-                // capsule is drawn here rather than borrowed. Same padding,
-                // same radius, same 44pt floor as every other chip in the app.
-                .font(Theme.TypeScale.support())
-                .foregroundStyle(Theme.Palette.ink)
-                .padding(.horizontal, Theme.Space.base)
-                .padding(.vertical, Theme.Space.snug)
+    private var twoColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: Theme.Space.base, alignment: .leading),
+         GridItem(.flexible(), spacing: Theme.Space.base, alignment: .leading)]
+    }
+
+    /// A name, a chevron, a hairline under it. The rule is what makes two
+    /// columns of words read as a list rather than as loose text, and it is
+    /// the same hairline the rest of the app separates rows with.
+    private func genreCell(_ genre: BrowseFilter.Genre) -> some View {
+        NavigationLink(value: BrowseFilter(period: .allTime, genre: genre)) {
+            VStack(spacing: 0) {
+                HStack(spacing: Theme.Space.tight) {
+                    Text(genre.name)
+                        .font(.system(.subheadline, design: .serif))
+                        .foregroundStyle(Theme.Palette.ink)
+                        .lineLimit(1)
+                        // "Mystery & Thriller" is the longest of the six and
+                        // fits a half-measure at default type; this is the
+                        // backstop for larger text sizes, where shrinking the
+                        // word beats truncating it to "Mystery & Thrill…".
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.Palette.inkFaint)
+                }
                 .frame(minHeight: 44)
-                .overlay(Capsule().stroke(Theme.Palette.rule, lineWidth: 0.5))
-                .contentShape(Capsule())
+                Rule()
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// **Four decades on one line, where nine chips used to scroll.**
+    ///
+    /// A horizontal strip of nine capsules is a second scroller competing with
+    /// the shelf above it, and it was the larger of the two on the page. Four
+    /// middot-separated words are the same invitation at a tenth of the
+    /// height; the remaining five decades — and the ability to combine one
+    /// with a genre — are where they belong, in the browser.
+    ///
+    /// The four are real decades rather than a rounded-off "Earlier". A bucket
+    /// named for a span the data model does not have would be the page
+    /// inventing a category to look tidy.
+    private var decadeBlock: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.snug) {
+            blockHead("Browse by decade", seeAll: Self.everything, spoken: "See all decades")
+            HStack(spacing: Theme.Space.snug) {
+                ForEach(Array(BrowseFilter.Decade.featured.enumerated()), id: \.element.id) { index, decade in
+                    if index > 0 {
+                        Text("·")
+                            .font(Theme.TypeScale.support())
+                            .foregroundStyle(Theme.Palette.inkFaint)
+                            .accessibilityHidden(true)
+                    }
+                    decadeLink(decade)
+                }
+                Spacer(minLength: 0)
+            }
+            .pageMargin()
+        }
+    }
+
+    private func decadeLink(_ decade: BrowseFilter.Decade) -> some View {
+        NavigationLink(value: BrowseFilter(period: .allTime, decade: decade)) {
+            Text(decade.label)
+                .font(.system(.subheadline, design: .serif))
+                .foregroundStyle(Theme.Palette.ink)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Kicker and a way through, for the two blocks under the shelf. The head
+    /// itself is the link, same as the shelf's, so "See all" is a label on a
+    /// full-width target rather than a 40-point word.
+    private func blockHead(_ kicker: String, seeAll: BrowseFilter, spoken: String) -> some View {
+        NavigationLink(value: seeAll) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.snug) {
+                Text(kicker).kickerStyle()
+                Spacer(minLength: 0)
+                Text("See all")
+                    .font(Theme.TypeScale.meta())
+                    .foregroundStyle(Theme.Palette.accent)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.Palette.accent)
+            }
+            .padding(.vertical, Theme.Space.tight)
+            .contentShape(Rectangle())
+            .pageMargin()
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -221,8 +370,16 @@ struct HomeView: View {
 /// One book, cover first, with just enough type underneath to know what it is.
 ///
 /// Used by the Home rail and the Browse grid so a book does not change shape
-/// between the two — the covers are the same size, the title is the same
-/// serif, and tapping does the same thing in both places.
+/// between the two — tapping does the same thing in both places, and only the
+/// width differs.
+///
+/// **The text block is a fixed height, and that is a real fix rather than
+/// tidiness.** Title and author were both sized to their content, so a
+/// one-line title sat at one height and a two-line title beside it at another;
+/// on a rail that meant the authors under adjacent covers were on different
+/// baselines, and in the grid it meant ragged rows. `reservesSpace` gives
+/// every card the same two lines of title whether it needs them or not, which
+/// is what makes a shelf look like a shelf.
 ///
 /// **What it deliberately does not carry**: a rank, a count, a rating from
 /// anyone but you. This is a browse surface quoting somebody else's chart, and
@@ -233,7 +390,7 @@ struct BrowseCover: View {
     @Environment(DeweyStore.self) private var store
 
     let book: Book
-    var width: CGFloat = 118
+    var width: CGFloat = 140
 
     private var status: ReadingStatus? { store.status(of: book.id) }
     private var rating: Rating? { store.myRating(for: book.id) }
@@ -242,16 +399,19 @@ struct BrowseCover: View {
         NavigationLink(value: book) {
             VStack(alignment: .leading, spacing: Theme.Space.tight) {
                 BookCoverView(book: book, width: width)
-                Text(book.title)
-                    .font(.system(.subheadline, design: .serif, weight: .medium))
-                    .foregroundStyle(Theme.Palette.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(book.author)
-                    .font(Theme.TypeScale.meta())
-                    .foregroundStyle(Theme.Palette.inkFaint)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(book.title)
+                        // Two lines, always. Not `.fixedSize`, which is what
+                        // let cards disagree about their own height.
+                        .font(.system(.subheadline, design: .serif, weight: .medium))
+                        .foregroundStyle(Theme.Palette.ink)
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.leading)
+                    Text(book.author)
+                        .font(Theme.TypeScale.meta())
+                        .foregroundStyle(Theme.Palette.inkFaint)
+                        .lineLimit(1)
+                }
                 mine
             }
             .frame(width: width, alignment: .leading)

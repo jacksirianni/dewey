@@ -95,6 +95,20 @@ struct BrowseFilter: Hashable {
             Genre(name: "Essays", subject: "essays"),
             Genre(name: "Classics", subject: "classics"),
         ]
+
+        /// The six Home offers as a way in.
+        ///
+        /// Home is a front table, not a catalogue: it shows enough to start
+        /// somebody browsing and sends them to `BrowseBooksView` for the rest,
+        /// where the whole set sits in a menu that costs no page at all. All
+        /// eleven laid out on Home was five lines of pills above the fold's
+        /// worth of controls — a taxonomy presented as a decision.
+        ///
+        /// Taken as a prefix of `all` rather than listed again, so a genre can
+        /// never exist here and not in the browser it links to. Which six is
+        /// therefore a question about the order of `all`: the broad fiction
+        /// shapes lead it, and reordering that list is how you change this.
+        static let featured: [Genre] = Array(all.prefix(6))
     }
 
     /// A span of first-publication years a reader would name.
@@ -123,6 +137,15 @@ struct BrowseFilter: Hashable {
             out.append(Decade(label: "Before 1950", from: nil, through: 1949))
             return out
         }()
+
+        /// The four Home offers on one line.
+        ///
+        /// Real decades, not a rounded-off "Earlier". A bucket named for a
+        /// span the model does not have would be the page inventing a category
+        /// so the row comes out even, and the reader who tapped it would get
+        /// results that did not match the word. The other five are in the
+        /// browser's menu, where they can also be combined with a genre.
+        static let featured: [Decade] = Array(all.prefix(4))
     }
 
     var period: Period = .thisWeek
