@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The home surface: a finite, weekly edition.
+/// A finite, weekly edition, built from the readers you follow.
 ///
 /// Weekly rather than daily because the arithmetic says so. Thirty people
 /// reading twenty books a year produce roughly eleven finish-events a week and
@@ -47,7 +47,13 @@ struct WeeklyEditionView: View {
         }
         .background(Theme.Palette.paper)
         .scrollIndicators(.hidden)
-        .deweyNavigationTitle("Dewey")
+        // "Edition", not "Dewey" — the tab directly above says "Edition", and a
+        // screen that answers to the app's own name instead of its tab's is the
+        // same vocabulary problem `LibraryView` already fixed once (§13.3). This
+        // title dates from when the edition was the app's only front surface;
+        // now that Home exists, four of five tabs title themselves after
+        // themselves, and this was the one holdout still claiming to be Dewey.
+        .deweyNavigationTitle("Edition")
         #if DEBUG
         .debugMenu(isPresented: $showingDebug)
         #endif
