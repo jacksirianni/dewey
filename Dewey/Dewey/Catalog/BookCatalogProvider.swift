@@ -18,9 +18,63 @@ protocol BookCatalogProvider: Sendable {
     /// results row needs; the full record costs a second question.
     func search(_ query: String) async throws -> [CatalogSearchResult]
 
+    /// Browsing rather than looking for something — what the catalog itself
+    /// says is being read, optionally narrowed by subject and period.
+    ///
+    /// Returns the provider's own order, which *is* the answer here. A search
+    /// result set gets re-ranked against the words the reader typed; a browse
+    /// result set has no words to rank against, and reordering it would mean
+    /// Dewey inventing a popularity signal it does not have.
+    func browse(_ query: CatalogBrowseQuery) async throws -> [CatalogSearchResult]
+
     /// The fuller record for one work — description and subjects, the fields
     /// search results never include.
     func work(_ workID: String) async throws -> CatalogWork
+}
+
+/// A question about what is being read, in terms any catalog could answer.
+///
+/// Three independent narrowings, all optional, because that is exactly what
+/// the browse surface exposes: a period, a subject, a span of publication
+/// years. The provider decides how to serve them; what crosses the seam is the
+/// question, not the endpoint.
+///
+/// **`subject` is a plain term rather than a Dewey genre**, and that is
+/// deliberate. Genres are the app's vocabulary — eleven display names a reader
+/// recognises — and the mapping from one of those to a term this catalog
+/// actually indexes lives in `BrowseFilter.Genre`, on the app side of the
+/// seam. A provider swap rewrites that table; it does not rewrite this type.
+struct CatalogBrowseQuery: Hashable, Sendable {
+
+    /// How far back "popular" is measured.
+    ///
+    /// The windowed cases are a genuinely different question from `.allTime`,
+    /// not a filter on the same one: one asks what is being opened now, the
+    /// other what has been read most ever. Providers answer them from
+    /// different places, and the copy above the results has to say which.
+    enum Window: String, Hashable, Sendable, CaseIterable {
+        case week, month, year, allTime
+    }
+
+    var window: Window = .week
+
+    /// A subject term in the provider's own vocabulary, or `nil` for the whole
+    /// catalog.
+    var subject: String? = nil
+
+    /// A span of first-publication years, or `nil` for any year.
+    var years: YearSpan? = nil
+
+    /// How many results the caller intends to show.
+    var limit: Int = 24
+
+    /// Both ends optional, because "before 1950" is a real thing to ask for
+    /// and a closed range cannot express it — the earliest first-publication
+    /// years in a catalog of this size are negative.
+    struct YearSpan: Hashable, Sendable {
+        var from: Int? = nil
+        var through: Int? = nil
+    }
 }
 
 /// What a search hit knows before anyone has asked for the whole work.

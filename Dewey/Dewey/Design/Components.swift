@@ -566,3 +566,162 @@ struct EditionEndView: View {
         .pageMargin()
     }
 }
+
+// MARK: - Section heading and book row
+
+/// Both of these lived in `SearchView.swift` and were file-private, back when
+/// Search and Browse were the only screens that had them. Home is a third, and
+/// a fourth copy of "how Dewey draws a book in a list" is exactly the kind of
+/// duplication that ends with two surfaces disagreeing about whether a saved
+/// book shows its status.
+
+/// Section heading. Kicker on the left, an optional count on the right — the
+/// count is a scale cue, never a score.
+struct SectionHead: View {
+    let kicker: String
+    var trailing: String? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(kicker).kickerStyle()
+            Spacer(minLength: Theme.Space.snug)
+            if let trailing {
+                Text(trailing)
+                    .font(Theme.TypeScale.meta())
+                    .foregroundStyle(Theme.Palette.inkFaint)
+            }
+        }
+        .pageMargin()
+    }
+}
+
+/// The book row used by every vertical list of books in the app. Cover,
+/// title, subtitle, your rating, where it sits on your shelves — and, for a
+/// book that sits nowhere yet, a one-tap way to start.
+struct BookRow: View {
+    @Environment(DeweyStore.self) private var store
+    let book: Book
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Theme.Space.base) {
+            NavigationLink(value: book) {
+                HStack(alignment: .center, spacing: Theme.Space.base) {
+                    BookCoverView(book: book, width: 52, scalesWithType: true)
+                    VStack(alignment: .leading, spacing: Theme.Space.tight) {
+                        Text(book.title)
+                            .font(Theme.TypeScale.cardTitle())
+                            .foregroundStyle(Theme.Palette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                        Text(book.subtitleLine)
+                            .font(Theme.TypeScale.meta())
+                            .foregroundStyle(Theme.Palette.inkFaint)
+                            .lineLimit(2)
+                        trailingMarks
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            // Only while the book has nowhere to sit yet. The moment it does,
+            // `trailingMarks` above already carries the same badge every other
+            // saved row shows, and a second control offering to do again what
+            // is already done would be the row arguing with itself.
+            if store.status(of: book.id) == nil {
+                wantToReadButton
+            }
+        }
+        .padding(.vertical, Theme.Space.snug + 2)
+        .pageMargin()
+    }
+
+    /// **The one-tap save this row was missing.**
+    ///
+    /// Before this, the only way to act on a book met in Search was to open
+    /// its page — and the page's own primary action sits several sections
+    /// down, past the Dewey Score and, on a book with any community activity,
+    /// past reviews too. For the lightest and most common intent a reader has
+    /// here — "I want to remember this" — that is a real tax on the exact
+    /// path this screen exists to end in: interesting book found, book now
+    /// belongs somewhere.
+    ///
+    /// It sets exactly what the book page's own "Want to Read" button sets,
+    /// through the same `DeweyStore.inferredProvenance(for:)` the page now
+    /// shares with this row — so a book that turns out to have been sent by
+    /// someone still remembers that correctly, even though the reader never
+    /// opened its page to see the offer.
+    ///
+    /// A bookmark outline, not a labelled button: `ReadingStatus.wantToRead`
+    /// already draws as this exact glyph everywhere else a status is marked,
+    /// so the row asks for nothing a reader has not already learned to read.
+    private var wantToReadButton: some View {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            withAnimation(Theme.Motion.standard) {
+                store.save(book.id, status: .wantToRead, provenance: store.inferredProvenance(for: book.id))
+            }
+        } label: {
+            Image(systemName: "bookmark")
+                .font(Theme.TypeScale.ui())
+                .foregroundStyle(Theme.Palette.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(ReadingStatus.wantToRead.title)
+        .accessibilityHint("Adds \(book.title) to your reading list")
+    }
+
+    /// The rating stays and becomes a numeral. Search results and Browse are the
+    /// definition of a comparison surface — the reader is running down a column
+    /// of candidates — so the value earns its place here in a way it does not on
+    /// an editor row or a single review.
+    ///
+    /// But the `.regular` mark could not deliver the value. Ten capsules 66pt
+    /// wide, no numeral: 7.8 and 9.7 draw as the same dash, so the one object on
+    /// this line that carried information was the one that could not be read.
+    /// It also shared the line with a status capsule and a bookmark glyph —
+    /// three shapes competing under a two-line subtitle beside a 52pt cover. The
+    /// numeral says the number, in a quarter of the width, and lets the badge
+    /// and the glyph be the only shapes on the row.
+    @ViewBuilder
+    private var trailingMarks: some View {
+        let mine: Rating? = store.myRating(for: book.id)
+        let status: ReadingStatus? = store.status(of: book.id)
+        if mine != nil || status != nil {
+            HStack(spacing: Theme.Space.snug) {
+                if mine != nil {
+                    RatingMark(rating: mine)
+                }
+                if let status {
+                    StatusBadge(status: status)
+                }
+                if store.isFavorite(book.id) {
+                    FavoriteMark(filled: true, size: 13)
+                }
+            }
+            .padding(.top, Theme.Space.hair)
+        }
+    }
+}
+
+struct StatusBadge: View {
+    let status: ReadingStatus
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: status.symbol)
+                .font(.caption2)
+            Text(status.title)
+                .font(Theme.TypeScale.kicker())
+        }
+        .foregroundStyle(Theme.Palette.inkSoft)
+        .padding(.horizontal, Theme.Space.tight + 1)
+        .padding(.vertical, 3)
+        .overlay(Capsule().stroke(Theme.Palette.rule, lineWidth: 0.5))
+        .accessibilityElement(children: .combine)
+    }
+}

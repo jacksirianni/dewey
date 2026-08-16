@@ -677,14 +677,12 @@ final class DeweyStore {
     /// How long a catalog answer is trusted before it is worth asking again.
     static let catalogTTL: TimeInterval = 7 * 24 * 60 * 60
 
-    /// Search the external catalog and hand back Dewey books.
-    ///
-    /// Every result resolves through the work-ID index first, so a work
-    /// Dewey has already seen — imported or merely viewed — comes back as
-    /// the book it already is, with its Dewey ID and any activity intact.
-    /// Only genuinely new works mint an ID, and they enter as transients:
-    /// search is a glance, not a commitment.
     /// Answers already given, keyed by the words that produced them.
+    ///
+    /// **This used to carry two doc comments fused into one** — the paragraph
+    /// describing how a result becomes a Dewey book had drifted down onto the
+    /// cache it sits above. That description now lives on `resolving`, which
+    /// is the function that does it and which browse shares.
     ///
     /// A catalog search costs about a second and a half, and readers backspace:
     /// they type a word too many, delete it, and wait all over again for an
@@ -697,6 +695,8 @@ final class DeweyStore {
     /// search field skip its debounce when there is nothing to wait for.
     func hasCachedCatalogSearch(_ query: String) -> Bool { searchCache[query] != nil }
 
+    /// Search the external catalog and hand back Dewey books. Identity is
+    /// `resolving`'s job; this adds the cache around it.
     @MainActor
     func searchCatalog(_ query: String) async throws -> [Book] {
         if let hit = searchCache[query] {
@@ -705,7 +705,32 @@ final class DeweyStore {
             // it now has.
             return hit.map { book(resolving: $0) }
         }
-        let results = try await catalog.search(query)
+        let out = resolving(try await catalog.search(query))
+        searchCache[query] = out
+        searchCacheOrder.append(query)
+        // A couple of dozen queries is more than a session of typing produces;
+        // the oldest goes when it does.
+        if searchCacheOrder.count > 24, let oldest = searchCacheOrder.first {
+            searchCacheOrder.removeFirst()
+            searchCache[oldest] = nil
+        }
+        return out
+    }
+
+    /// Catalog rows, as Dewey books.
+    ///
+    /// Every result resolves through the work-ID index first, so a work Dewey
+    /// has already seen — imported or merely viewed — comes back as the book
+    /// it already is, with its Dewey ID and any activity intact. Only
+    /// genuinely new works mint an ID, and they enter as transients: looking
+    /// is a glance, not a commitment (§16).
+    ///
+    /// Shared by search and browse. A book met on the Home shelf and the same
+    /// book met in a search have to be **one** Dewey book, or the reader's
+    /// rating shows on one surface and not the other, and saving from each
+    /// leaves two copies in the library.
+    @MainActor
+    private func resolving(_ results: [CatalogSearchResult]) -> [Book] {
         var out: [Book] = []
         var seen = Set<String>()
         for result in results {
@@ -724,13 +749,38 @@ final class DeweyStore {
             guard seen.insert(book.id).inserted else { continue }
             out.append(book)
         }
-        searchCache[query] = out
-        searchCacheOrder.append(query)
-        // A couple of dozen queries is more than a session of typing produces;
-        // the oldest goes when it does.
-        if searchCacheOrder.count > 24, let oldest = searchCacheOrder.first {
-            searchCacheOrder.removeFirst()
-            searchCache[oldest] = nil
+        return out
+    }
+
+    /// Browse answers already given, keyed by the question that produced them.
+    ///
+    /// The same shape and the same reasoning as `searchCache`: in memory only,
+    /// dies with the session, bounded. It is here because the browse surface
+    /// is *navigated* rather than typed — a reader opens Horror, opens a book,
+    /// comes back, tries the 1980s, comes back again — and paying a second and
+    /// a half for a shelf they have already seen is the one delay this screen
+    /// can avoid without pretending to be offline.
+    private var browseCache: [CatalogBrowseQuery: [Book]] = [:]
+    private var browseCacheOrder: [CatalogBrowseQuery] = []
+
+    /// What the catalog says is being read (§16).
+    ///
+    /// Nothing is re-ordered here. The provider's order is the answer; Dewey's
+    /// only job is turning its rows into books it can already speak for.
+    @MainActor
+    func browseCatalog(_ query: CatalogBrowseQuery) async throws -> [Book] {
+        if let hit = browseCache[query] {
+            // Re-resolved rather than returned as stored: one of them may have
+            // been saved or rated since, and the shelf should show it.
+            return hit.map { book(resolving: $0) }
+        }
+        let out = resolving(try await catalog.browse(query))
+        browseCache[query] = out
+        browseCacheOrder.append(query)
+        // A dozen shelves is more than one sitting with the filters produces.
+        if browseCacheOrder.count > 12, let oldest = browseCacheOrder.first {
+            browseCacheOrder.removeFirst()
+            browseCache[oldest] = nil
         }
         return out
     }

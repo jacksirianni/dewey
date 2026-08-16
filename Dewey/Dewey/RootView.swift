@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Four places, because Dewey turned out to be four products held together by
+/// Five places, because Dewey turned out to be five products held together by
 /// one idea.
 ///
 /// The earlier two-tab shell (an edition and a library) was honest about the
@@ -10,8 +10,16 @@ import SwiftUI
 /// like it only knew about thirty-one books. The profile is not settings; it is
 /// the argument you are making about yourself, and an argument needs an address.
 ///
+/// **Home is the fifth, and it is not a bigger Search** (§20). Search answers a
+/// question you already have; Home answers the one you do not — *what is
+/// happening in books at all* — and it is the only surface in the app that
+/// looks outward past the people you follow. It sits left of the Edition
+/// because the app now reads widest-first: the world, then your world, then
+/// your shelves, then a question, then you.
+///
 /// What still isn't here: badges, unread counts, anything numeric on a tab. The
-/// edition ends and the library waits. Neither of them should be able to nag.
+/// edition ends and the library waits. Neither of them should be able to nag,
+/// and neither should the front table.
 struct RootView: View {
     @Environment(DeweyStore.self) private var store
     @Environment(SessionStore.self) private var session
@@ -96,6 +104,7 @@ struct RootView: View {
 
     private var tabs: some View {
         TabView {
+            homeTab
             editionTab
             searchTab
             libraryTab
@@ -137,6 +146,25 @@ struct RootView: View {
     }
 
     // MARK: - Tabs
+
+    /// **First, and to the left of the Edition, because it is the wider of the
+    /// two.** Home is the reading world; the Edition is your reading world.
+    /// Reading left to right, the app now opens on everything and narrows to
+    /// the people you chose — which is also the order a reader arrives in, since
+    /// on the first evening there is nobody in the Edition yet and there is
+    /// always something on the front table.
+    ///
+    /// It does not displace the Edition as the app's argument. The Edition is
+    /// still the only finite, attributed, ending surface in Dewey and still the
+    /// only one that can hand you a book *from a person*; Home is the shop
+    /// window, and a shop window is not a letter.
+    private var homeTab: some View {
+        NavigationStack {
+            HomeView()
+                .deweyDestinations()
+        }
+        .tabItem { Label("Home", systemImage: "house") }
+    }
 
     private var editionTab: some View {
         NavigationStack {
@@ -197,6 +225,11 @@ extension View {
             .navigationDestination(for: Book.self) { BookDetailView(book: $0) }
             .navigationDestination(for: ReaderProfile.self) { ProfileView(reader: $0) }
             .navigationDestination(for: BookList.self) { ListDetailView(list: $0) }
+            // One browser for every discovery configuration (§20). A genre
+            // chip, a decade, and the Home shelf's own heading all push the
+            // same screen with a different question in it — which is why
+            // there is no destination per genre and never will be.
+            .navigationDestination(for: BrowseFilter.self) { BrowseBooksView(filter: $0) }
             // No destination for a ranking. There is exactly one per reader
             // (§19), so it is reached as a destination closure from the profile
             // that owns it rather than as a value that has to carry which one

@@ -11,6 +11,7 @@ struct OpenLibraryClient: BookCatalogProvider {
 
     private static let searchBase = "https://openlibrary.org/search.json"
     private static let worksBase = "https://openlibrary.org/works"
+    private static let trendingBase = "https://openlibrary.org/trending"
 
     /// Identified-tier courtesy, per Open Library's developer guidelines.
     private static let userAgent = "Dewey (jacksirianni@icloud.com)"
@@ -63,47 +64,152 @@ struct OpenLibraryClient: BookCatalogProvider {
     /// cache is what makes the second look at a query instant.
     func search(_ query: String) async throws -> [CatalogSearchResult] {
         let rows = try await docs(query: query, limit: Self.fetchLimit, withEditions: true)
-        let results = rows.compactMap { row -> CatalogSearchResult? in
-            // A hit with no work key is unaddressable; nothing downstream
-            // could ever fetch, refresh, or dedupe it. Dropped rather than
-            // rendered as a dead end.
-            guard let workID = row.key.map(Self.trimWorkKey), !workID.isEmpty else { return nil }
-            let cover = Self.preferredCover(row)
-            return CatalogSearchResult(
-                workID: workID,
-                title: Self.preferredTitle(row),
-                author: row.author_name?.first,
-                authorKeys: row.author_key ?? [],
-                firstPublishYear: row.first_publish_year,
-                coverID: cover.id ?? row.cover_i,
-                coverEditionID: cover.editionID,
-                editionCount: row.edition_count
-            )
-        }
+        let results = rows.compactMap(Self.result(from:))
         return Array(ranked(collapsingDuplicates(results), for: query).prefix(Self.keepLimit))
     }
 
+    /// One search or trending row, normalized — or `nil` where the row is
+    /// unusable.
+    ///
+    /// A hit with no work key is unaddressable; nothing downstream could ever
+    /// fetch, refresh, or dedupe it. Dropped rather than rendered as a dead
+    /// end.
+    ///
+    /// Shared by `search` and `browse` because Open Library's trending
+    /// endpoint returns **the same document shape** as search, down to the
+    /// nested editions — so the English-title and English-jacket preferences
+    /// apply to a browse shelf exactly as they do to a results row, and a
+    /// second copy of this mapping would be a second place for them to drift.
+    private static func result(from row: SearchDoc) -> CatalogSearchResult? {
+        guard let workID = row.key.map(Self.trimWorkKey), !workID.isEmpty else { return nil }
+        let cover = Self.preferredCover(row)
+        return CatalogSearchResult(
+            workID: workID,
+            title: Self.preferredTitle(row),
+            author: row.author_name?.first,
+            authorKeys: row.author_key ?? [],
+            firstPublishYear: row.first_publish_year,
+            coverID: cover.id ?? row.cover_i,
+            coverEditionID: cover.editionID,
+            editionCount: row.edition_count
+        )
+    }
+
+    /// Named fields keep the payload to what a results row renders. Notably
+    /// absent: `isbn`, which returns every ISBN of every edition — hundreds
+    /// of strings nobody asked for. The bare `editions` key is required
+    /// alongside its subfields; asking for `editions.language` on its own
+    /// returns nothing at all.
+    private static let baseFields = "key,title,author_name,author_key,first_publish_year,cover_i,edition_count"
+    private static let editionFields = ",editions,editions.key,editions.title,editions.language,editions.cover_i"
+
     private func docs(query: String, limit: Int, withEditions: Bool) async throws -> [SearchDoc] {
-        // Named fields keep the payload to what a results row renders. Notably
-        // absent: `isbn`, which returns every ISBN of every edition — hundreds
-        // of strings nobody asked for. The bare `editions` key is required
-        // alongside its subfields; asking for `editions.language` on its own
-        // returns nothing at all.
-        var fields = "key,title,author_name,author_key,first_publish_year,cover_i,edition_count"
-        if withEditions {
-            fields += ",editions,editions.key,editions.title,editions.language,editions.cover_i"
-        }
         var components = URLComponents(string: Self.searchBase)!
         components.queryItems = [
             // Free-text `q` rather than `title=`, so an author's name or a
             // series still finds books. Measured against the alternative:
             // `title=` loses "Convenience Store Woman" outright.
             .init(name: "q", value: query),
-            .init(name: "fields", value: fields),
+            .init(name: "fields", value: Self.baseFields + (withEditions ? Self.editionFields : "")),
             .init(name: "limit", value: "\(limit)"),
         ]
         let data = try await get(components.url!)
         return try JSONDecoder().decode(SearchPage.self, from: data).docs
+    }
+
+    // MARK: - Browse
+
+    /// What the catalog says is being read, narrowed by whatever the reader
+    /// asked for.
+    ///
+    /// **Two endpoints, and which one answers is decided by the question, not
+    /// by preference.** Open Library measures trending over a rolling window
+    /// and serves it from `/trending/{weekly,monthly,yearly}` — real counts of
+    /// what its readers are opening — but that endpoint takes no filters at
+    /// all: a `q` handed to it is ignored, and it will happily return the
+    /// unfiltered chart under a heading that says Horror. So a windowed
+    /// question with nothing narrowing it goes to trending, and everything
+    /// else goes to search with `sort=readinglog`, which is a genuine count of
+    /// how many Open Library readers have the book on a shelf and does filter.
+    ///
+    /// The two are different claims and the browse surface says which is on
+    /// screen — see `BrowseFilter.sourceLine`. Nothing here blends them, and
+    /// nothing here invents a windowed count for a subject the catalog cannot
+    /// window.
+    ///
+    /// The provider's order is preserved. `ranked` exists to correct relevance
+    /// against words a reader typed, and there are no words here; re-sorting
+    /// a popularity chart would be Dewey substituting a signal of its own.
+    func browse(_ query: CatalogBrowseQuery) async throws -> [CatalogSearchResult] {
+        let rows = try await browseDocs(query)
+        let results = rows.compactMap(Self.result(from:))
+        return Array(collapsingDuplicates(results).prefix(query.limit))
+    }
+
+    /// Headroom over what the caller shows, so de-duplication has something to
+    /// spend. Open Library holds several work records for popular books, and a
+    /// shelf that asked for exactly ten would come back with eight.
+    private static func fetchCount(for limit: Int) -> Int { limit + 12 }
+
+    private func browseDocs(_ query: CatalogBrowseQuery) async throws -> [SearchDoc] {
+        let fields = Self.baseFields + Self.editionFields
+        let limit = Self.fetchCount(for: query.limit)
+
+        if let window = Self.trendingPath(for: query) {
+            var components = URLComponents(string: "\(Self.trendingBase)/\(window).json")!
+            components.queryItems = [
+                .init(name: "fields", value: fields),
+                .init(name: "limit", value: "\(limit)"),
+            ]
+            let data = try await get(components.url!)
+            return try JSONDecoder().decode(TrendingPage.self, from: data).works
+        }
+
+        var components = URLComponents(string: Self.searchBase)!
+        components.queryItems = [
+            .init(name: "q", value: Self.solrQuery(for: query)),
+            .init(name: "fields", value: fields),
+            // Open Library's count of readers who have shelved the work. Its
+            // readers, not Dewey's — which is the whole reason this surface
+            // exists and the reason its copy never claims otherwise.
+            .init(name: "sort", value: "readinglog"),
+            .init(name: "limit", value: "\(limit)"),
+        ]
+        let data = try await get(components.url!)
+        return try JSONDecoder().decode(SearchPage.self, from: data).docs
+    }
+
+    /// The trending path this question maps onto, or `nil` if trending cannot
+    /// honestly answer it.
+    ///
+    /// Any narrowing at all disqualifies it, because the endpoint silently
+    /// ignores filters rather than refusing them.
+    private static func trendingPath(for query: CatalogBrowseQuery) -> String? {
+        guard query.subject == nil, query.years == nil else { return nil }
+        switch query.window {
+        case .week: return "weekly"
+        case .month: return "monthly"
+        case .year: return "yearly"
+        case .allTime: return nil
+        }
+    }
+
+    /// The narrowings, in Solr's syntax. `*:*` — everything — when there are
+    /// none, which is what an all-time chart of the whole catalog is.
+    private static func solrQuery(for query: CatalogBrowseQuery) -> String {
+        var terms: [String] = []
+        if let subject = query.subject {
+            // Quoted, so a two-word subject stays one term. The set of
+            // subjects is a fixed table in the app (`BrowseFilter.Genre`), so
+            // there is no reader input reaching this string.
+            terms.append("subject:\"\(subject)\"")
+        }
+        if let years = query.years {
+            let from = years.from.map(String.init) ?? "*"
+            let through = years.through.map(String.init) ?? "*"
+            terms.append("first_publish_year:[\(from) TO \(through)]")
+        }
+        return terms.isEmpty ? "*:*" : terms.joined(separator: " AND ")
     }
 
     // MARK: - Choosing a jacket
@@ -434,6 +540,12 @@ struct OpenLibraryClient: BookCatalogProvider {
 
     private struct SearchPage: Decodable {
         let docs: [SearchDoc]
+    }
+
+    /// The trending endpoint's envelope. Same rows as a search page, under a
+    /// different key.
+    private struct TrendingPage: Decodable {
+        let works: [SearchDoc]
     }
 
     private struct SearchDoc: Decodable {
