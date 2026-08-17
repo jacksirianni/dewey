@@ -30,6 +30,18 @@ protocol BookCatalogProvider: Sendable {
     /// The fuller record for one work — description and subjects, the fields
     /// search results never include.
     func work(_ workID: String) async throws -> CatalogWork
+
+    /// A full catalog row — title, author, year, cover — for a bare work id
+    /// this device has never seen before.
+    ///
+    /// Exists for exactly one caller: a device that receives a synced
+    /// `olw:<work id>` Library reference for a book it has never imported
+    /// (§Phase2 Library), and needs enough of a `Book` to actually open one.
+    /// `nil` when the provider has nothing under that key. Deliberately not
+    /// folded into `work(_:)` — that call answers a different question
+    /// (description and subjects for a book already identified) and its
+    /// response shape carries neither a title nor an author.
+    func resolveWork(_ workID: String) async throws -> CatalogSearchResult?
 }
 
 /// A question about what is being read, in terms any catalog could answer.

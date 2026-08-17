@@ -105,14 +105,22 @@ enum AccountServices {
 
     /// Nil when unconfigured. Callers must handle that by showing the
     /// unconfigured state rather than by substituting anything.
-    static func make() -> (auth: AuthService, profiles: ProfileService)? {
+    ///
+    /// One `SupabaseClient` per call, shared by all three services — the same
+    /// rule `SessionStore` already follows for auth and profiles, so a
+    /// Library push never opens a second connection to the project.
+    static func make() -> (auth: AuthService, profiles: ProfileService, library: LibraryService)? {
         switch backend {
         case .supabase:
             guard let config = AccountConfig.supabase else { return nil }
             let client = SupabaseClient(supabaseURL: config.url, supabaseKey: config.anonKey)
-            return (SupabaseAuthService(client: client), SupabaseProfileService(client: client))
+            return (
+                SupabaseAuthService(client: client),
+                SupabaseProfileService(client: client),
+                SupabaseLibraryService(client: client)
+            )
         case .localTesting:
-            return (LocalAuthService(), LocalProfileService())
+            return (LocalAuthService(), LocalProfileService(), LocalLibraryService())
         case .unconfigured:
             return nil
         }

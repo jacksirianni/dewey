@@ -513,6 +513,18 @@ struct OpenLibraryClient: BookCatalogProvider {
         )
     }
 
+    /// The same search endpoint `search(_:)` already speaks, scoped to one
+    /// work by key instead of free text — `q=key:/works/OLxxxxW` returns the
+    /// identical row shape a free-text hit does (title, author, year, cover),
+    /// verified directly against `openlibrary.org`. Not a second catalog
+    /// backend: one more query this client already knows how to ask, and the
+    /// only way a device with no local record of a book can turn a synced
+    /// `olw:` reference back into one.
+    func resolveWork(_ workID: String) async throws -> CatalogSearchResult? {
+        let rows = try await docs(query: "key:/works/\(workID)", limit: 1, withEditions: true)
+        return rows.compactMap(Self.result(from:)).first
+    }
+
     // MARK: - Covers
 
     enum CoverSize: String {

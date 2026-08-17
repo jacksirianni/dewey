@@ -447,6 +447,13 @@ final class DeweyStore {
     var onFavoriteBooksChanged: (([String]) -> Void)?
     var onFollowsChanged: ((Set<String>) -> Void)?
 
+    /// Fired after a status change lands locally, for a book
+    /// `cloudLibraryRef(for:)` can actually name — never for a local-only
+    /// book. Same pattern, same reason: local is the authority, the write is
+    /// already on disk, and the server hears about it as a courtesy.
+    var onLibraryStatusChanged: ((_ bookRef: String, _ status: ReadingStatus) -> Void)?
+    var onLibraryEntryRemoved: ((_ bookRef: String) -> Void)?
+
     /// Whether this book is one of the four on your profile. Deliberately not
     /// the same question as `isFavorite(_:)`.
     func isFeatured(_ bookID: String) -> Bool { favoriteBookIDs.contains(bookID) }
@@ -863,6 +870,141 @@ final class DeweyStore {
         importedBooks[bookID] != nil || SeedData.find(bookID) != nil || viewedRemoteBooks[bookID] != nil
     }
 
+    // MARK: - Cloud book identity (§Phase2 Library)
+
+    /// The provider-prefixed reference another device could resolve this book
+    /// from — `nil` when nothing about this book is stable across devices.
+    ///
+    /// Precedence matches `supabase/0004_library.sql`: `olw:` first, `isbn:`
+    /// second, `dewey:` last and only when the id itself is stable there.
+    ///
+    /// **In practice this is almost always `olw:`.** `CatalogSearchResult.workID`
+    /// is non-optional, so every book that ever passed through `resolving(_:)` —
+    /// every search hit, every browse row, every import — already carries an
+    /// Open Library work id, and all 41 seed books do too (`SeedData.books`).
+    /// `isbn:` is reachable only for the seed: `Book.imported(from:deweyID:)`
+    /// never sets `isbn`, so no book that arrived through the catalog carries
+    /// one. `dewey:<id>` is cloud-safe only when `id` is itself a seed slug —
+    /// an imported book's id is a UUID minted fresh on the device that saw it
+    /// first (`"dw-" + UUID().uuidString`, in `resolving(_:)`), and pushing
+    /// that as a fallback would hand a second device an id it could never
+    /// reconstruct, which is exactly what `reconcileLibrary` must not do.
+    private func cloudLibraryRef(for bookID: String) -> String? {
+        guard let book = importedBooks[bookID] ?? SeedData.find(bookID) else { return nil }
+        if let workID = book.openLibraryWorkID, !workID.isEmpty { return "olw:\(workID)" }
+        if let isbn = book.isbn, !isbn.isEmpty { return "isbn:\(isbn)" }
+        if SeedData.find(bookID) != nil { return "dewey:\(bookID)" }
+        return nil
+    }
+
+    /// The reverse of `cloudLibraryRef(for:)` — turns a synced reference back
+    /// into a local Dewey book id, minting a fresh import if this device has
+    /// never seen the book before. `nil` when the reference cannot be
+    /// resolved: an `isbn:`/`dewey:` ref this device's seed doesn't recognise,
+    /// since neither carries a network fallback in this slice (they only ever
+    /// name a seed book, which needs none), or an `olw:` work id the catalog
+    /// itself no longer has anything under.
+    @MainActor
+    private func resolveCloudRef(_ ref: String) async -> String? {
+        if let workID = Self.workID(fromCloudRef: ref) {
+            if let known = book(workID: workID) { return known.id }
+            guard let result = try? await catalog.resolveWork(workID) else { return nil }
+            let deweyID = "dw-" + UUID().uuidString.lowercased()
+            importedBooks[deweyID] = Book.imported(from: result, deweyID: deweyID)
+            return deweyID
+        }
+        if let isbn = Self.isbn(fromCloudRef: ref) {
+            return SeedData.books.first { $0.isbn == isbn }?.id
+        }
+        if let deweyID = Self.deweyID(fromCloudRef: ref), SeedData.find(deweyID) != nil {
+            return deweyID
+        }
+        return nil
+    }
+
+    private static func workID(fromCloudRef ref: String) -> String? {
+        ref.hasPrefix("olw:") ? String(ref.dropFirst(4)) : nil
+    }
+
+    private static func isbn(fromCloudRef ref: String) -> String? {
+        ref.hasPrefix("isbn:") ? String(ref.dropFirst(5)) : nil
+    }
+
+    private static func deweyID(fromCloudRef ref: String) -> String? {
+        ref.hasPrefix("dewey:") ? String(ref.dropFirst(6)) : nil
+    }
+
+    /// Reconciles local Library state with what the server holds, on
+    /// authenticated session restoration — see `RootView.adoptAccount`. Not a
+    /// general sync engine: this runs once per transition into `.ready`, pulls
+    /// once, and pushes back only what the server hasn't seen yet.
+    ///
+    /// **The invariant that matters most: an empty local Library must never
+    /// erase a populated cloud one**, and nothing below ever assigns `library`
+    /// wholesale — every branch only appends or updates one entry at a time.
+    ///
+    /// Four cases, by what each side holds for a given `book_ref`:
+    ///   * Remote only → hydrate: reconstruct the book via `resolveCloudRef`
+    ///     and append a local entry.
+    ///   * Local only (and cloud-safe) → bootstrap: tell the server, through
+    ///     the same `onLibraryStatusChanged` callback a fresh status change
+    ///     uses. A local-only book `cloudLibraryRef` refuses to name is left
+    ///     alone — that is the documented limitation of this slice, not a gap
+    ///     to paper over here.
+    ///   * Both, same status → nothing to do.
+    ///   * Both, different status → conflict. `LibraryEntry.savedAt` is set
+    ///     once at creation and never touched again on a status change, so
+    ///     there is no reliable local "last modified" to weigh against the
+    ///     server's real `updated_at`. Smallest deterministic safe policy:
+    ///     **remote wins.** The push-immediately model means the server
+    ///     already reflects the last change *some* device successfully told
+    ///     it about, which is the closest thing this slice has to a
+    ///     trustworthy clock — and it is at least as informed as a local
+    ///     value this model has no way to date.
+    @MainActor
+    func reconcileLibrary(withRemote remote: [RemoteLibraryEntry]) async {
+        guard !remote.isEmpty || !library.isEmpty else { return }
+
+        var localIndexByRef: [String: Int] = [:]
+        for (i, entry) in library.enumerated() {
+            if let ref = cloudLibraryRef(for: entry.bookID) { localIndexByRef[ref] = i }
+        }
+
+        var remoteRefs = Set<String>()
+        var changed = false
+
+        for row in remote {
+            remoteRefs.insert(row.bookRef)
+            if let i = localIndexByRef[row.bookRef] {
+                if library[i].status != row.status {
+                    library[i].status = row.status
+                    changed = true
+                }
+            } else if let bookID = await resolveCloudRef(row.bookRef) {
+                let entry = LibraryEntry(
+                    id: UUID().uuidString, bookID: bookID, status: row.status,
+                    provenance: Provenance(origin: .ownSearch, reason: nil, date: row.createdAt),
+                    note: nil, savedAt: row.createdAt
+                )
+                library.append(entry)
+                localIndexByRef[row.bookRef] = library.count - 1
+                changed = true
+            } else {
+                print("Dewey: could not reconstruct a book for remote library reference \"\(row.bookRef)\" — leaving it off this device.")
+            }
+        }
+
+        if changed { persist() }
+
+        // Local-only, cloud-safe entries the server has never seen —
+        // bootstrap. Read after `persist()` so a hydrated entry from the loop
+        // above is never mistaken for one needing a first push.
+        for entry in library {
+            guard let ref = cloudLibraryRef(for: entry.bookID), !remoteRefs.contains(ref) else { continue }
+            onLibraryStatusChanged?(ref, entry.status)
+        }
+    }
+
     /// The moment a glance becomes a commitment (§16) — and the gate that
     /// stops a commitment outliving the book it is about.
     ///
@@ -1162,6 +1304,7 @@ final class DeweyStore {
         )
         library.append(entry)
         persist()
+        pushLibraryStatusIfCloudSafe(bookID, status)
         return entry
     }
 
@@ -1174,12 +1317,24 @@ final class DeweyStore {
             return
         }
         persist()
+        pushLibraryStatusIfCloudSafe(bookID, status)
+    }
+
+    /// The one call site both `save` and `setStatus` route their cloud push
+    /// through — see `onLibraryStatusChanged`. Silent no-op for a book
+    /// `cloudLibraryRef` cannot name; that book stays local-only in this
+    /// slice, by design.
+    private func pushLibraryStatusIfCloudSafe(_ bookID: String, _ status: ReadingStatus) {
+        guard let ref = cloudLibraryRef(for: bookID) else { return }
+        onLibraryStatusChanged?(ref, status)
     }
 
     func remove(_ bookID: String) {
+        let ref = cloudLibraryRef(for: bookID)
         library.removeAll { $0.bookID == bookID }
         diary.removeAll { $0.bookID == bookID }
         persist()
+        if let ref { onLibraryEntryRemoved?(ref) }
     }
 
     func setNote(_ note: String?, for bookID: String) {

@@ -72,6 +72,10 @@ struct RootView: View {
         // phase is `.ready`.
         store.onFavoriteBooksChanged = { [session] in session.pushFavoriteBooks($0) }
         store.onFollowsChanged = { [session] in session.pushSeedFollows(Array($0)) }
+        store.onLibraryStatusChanged = { [session] ref, status in
+            session.pushLibraryStatus(bookRef: ref, status: status)
+        }
+        store.onLibraryEntryRemoved = { [session] ref in session.pushLibraryDeletion(bookRef: ref) }
         // A local-beta account has nobody on the other end to start the book —
         // see `DeweyStore.simulatesRecipientClosure`.
         store.simulatesRecipientClosure = session.backend.isReal
@@ -95,11 +99,22 @@ struct RootView: View {
 
         store.adoptIdentity(session.phase.profile)
 
-        guard session.phase.isReady, let remote = await session.remoteState() else { return }
-        store.applyAccountState(
-            favoriteBooks: remote.favoriteBooks,
-            seedFollows: remote.seedFollows
-        )
+        guard session.phase.isReady else { return }
+
+        if let remote = await session.remoteState() {
+            store.applyAccountState(
+                favoriteBooks: remote.favoriteBooks,
+                seedFollows: remote.seedFollows
+            )
+        }
+
+        // Pulled independently of the favorites/follows fetch above — a
+        // failure there must not also skip reconciling the Library, and vice
+        // versa. See `DeweyStore.reconcileLibrary(withRemote:)` for what
+        // happens with what comes back.
+        if let remoteLibrary = await session.remoteLibraryEntries() {
+            await store.reconcileLibrary(withRemote: remoteLibrary)
+        }
     }
 
     private var tabs: some View {

@@ -30,15 +30,17 @@ final class SessionStore {
     /// services without relaunching.
     private var auth: AuthService?
     private var profiles: ProfileService?
+    private var library: LibraryService?
 
-    init(auth: AuthService?, profiles: ProfileService?) {
+    init(auth: AuthService?, profiles: ProfileService?, library: LibraryService?) {
         self.auth = auth
         self.profiles = profiles
+        self.library = library
     }
 
     convenience init() {
         let services = AccountServices.make()
-        self.init(auth: services?.auth, profiles: services?.profiles)
+        self.init(auth: services?.auth, profiles: services?.profiles, library: services?.library)
     }
 
     /// Which account system is in use. Surfaced wherever a result could be
@@ -58,6 +60,7 @@ final class SessionStore {
         let services = AccountServices.make()
         auth = services?.auth
         profiles = services?.profiles
+        library = services?.library
         lastError = nil
         phase = .restoring
         await restore()
@@ -262,6 +265,51 @@ final class SessionStore {
     func pushSeedFollows(_ readerIDs: [String]) {
         guard let profiles, case .ready(let profile) = phase else { return }
         Task { try? await profiles.replaceSeedFollows(userID: profile.userID, readerIDs: readerIDs) }
+    }
+
+    // MARK: - Library
+
+    /// Pushes a status change for a book `DeweyStore` has already decided is
+    /// cloud-safe — see `DeweyStore.cloudLibraryRef(for:)`. Fire-and-forget
+    /// like the pushes above, with one difference: a failure here is printed
+    /// rather than swallowed, per the smallest existing pattern for a write
+    /// that silently didn't happen (`DeweyStore`'s own `persist()` failure
+    /// logging). The local status change already landed; this is the only
+    /// place that outcome could be noticed.
+    func pushLibraryStatus(bookRef: String, status: ReadingStatus) {
+        guard let library, case .ready(let profile) = phase else { return }
+        Task {
+            do {
+                try await library.upsertStatus(userID: profile.userID, bookRef: bookRef, status: status)
+            } catch {
+                print("Dewey: could not push library status to the server — \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func pushLibraryDeletion(bookRef: String) {
+        guard let library, case .ready(let profile) = phase else { return }
+        Task {
+            do {
+                try await library.deleteEntry(userID: profile.userID, bookRef: bookRef)
+            } catch {
+                print("Dewey: could not remove library entry from the server — \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// The reader's cloud library, for a device that has just become ready.
+    /// `nil` when there is nothing to reconcile or the fetch failed — the
+    /// caller leaves local state alone in both cases, exactly as
+    /// `remoteState()` does for the profile four and follows.
+    func remoteLibraryEntries() async -> [RemoteLibraryEntry]? {
+        guard let library, let profile = phase.profile else { return nil }
+        do {
+            return try await library.fetchEntries(userID: profile.userID)
+        } catch {
+            print("Dewey: could not fetch library from the server — \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// What the server holds for this account, for a device that has just signed
